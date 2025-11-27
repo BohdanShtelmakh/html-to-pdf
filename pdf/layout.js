@@ -29,9 +29,10 @@ class Layout {
   }
 
   newBlock(mt = 0, mb = 0) {
-    const topToApply = this.atStartOfPage ? 0 : Math.max(mt, this.pendingBottomMargin) - this.pendingBottomMargin;
+    const topToApply = this.atStartOfPage ? mt : Math.max(mt, this.pendingBottomMargin);
     this.y += topToApply;
     this.atStartOfPage = false;
+    this.pendingBottomMargin = 0;
     return () => {
       this.pendingBottomMargin = mb;
     };

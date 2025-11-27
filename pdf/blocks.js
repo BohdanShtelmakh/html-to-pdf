@@ -11,15 +11,21 @@ async function renderList(node, ctx, ordered = false) {
     const text = gatherPlainText(li) || '';
 
     const fontSize = styleNumber(li.styles || {}, 'font-size', 12);
+
     const lineGap = Math.max(0, fontSize * (1.2 - 1));
+    doc.font('Helvetica').fontSize(fontSize).fillColor('#000');
     const h = doc.heightOfString(bullet + text, {
       width: layout.contentWidth(),
       lineGap,
     });
-    layout.ensureSpace(h + 2);
 
-    doc.font('Helvetica').fontSize(fontSize).fillColor('#000');
-    doc.text(bullet, layout.x, layout.y, { continued: true });
+    layout.ensureSpace(h);
+
+    // Position at the list cursor for each item
+    doc.x = layout.x;
+    doc.y = layout.y;
+
+    doc.text(bullet, doc.x, doc.y, { continued: true });
     const runs = inlineRuns(li);
     for (const run of runs) {
       selectFontForInline(doc, run.styles || {}, !!run.bold, !!run.italic);
@@ -30,7 +36,7 @@ async function renderList(node, ctx, ordered = false) {
     }
     doc.text('', { continued: false });
 
-    layout.cursorToNextLine(2);
+    layout.cursorToNextLine(h + lineGap);
     idx++;
   }
 }

@@ -26,6 +26,10 @@ function tagDefaults(tag) {
       return { size: BASE_PT, mt: 0, mb: em(1), lh: BODY_LH, bold: false };
     case 'table':
       return { size: BASE_PT, mt: em(1), mb: em(1), lh: BODY_LH, bold: false };
+    case 'div':
+    case 'body':
+    case 'root':
+      return { size: BASE_PT, mt: 0, mb: 0, lh: BODY_LH, bold: false };
     default:
       return { size: BASE_PT, mt: 0, mb: em(0.6), lh: BODY_LH, bold: false };
   }
@@ -40,14 +44,30 @@ function defaultMarginsFor(tag) {
   return { mt: d.mt, mb: d.mb };
 }
 
+function parseMarginShorthand(val, fallbackTop, fallbackBottom) {
+  if (!val) return { top: fallbackTop, bottom: fallbackBottom };
+  const parts = String(val)
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (!parts.length) return { top: fallbackTop, bottom: fallbackBottom };
+  const nums = parts.map((p) => parsePx(p, null)).filter((n) => n != null);
+  if (!nums.length) return { top: fallbackTop, bottom: fallbackBottom };
+  if (nums.length === 1) return { top: nums[0], bottom: nums[0] };
+  if (nums.length === 2) return { top: nums[0], bottom: nums[0] };
+  if (nums.length === 3) return { top: nums[0], bottom: nums[2] };
+  return { top: nums[0], bottom: nums[2] };
+}
+
 function defaultLineHeightFor(tag) {
   return tagDefaults(tag).lh;
 }
 
 function computedMargins(styles, tag) {
   const d = defaultMarginsFor(tag);
-  const mt = styles['margin-top'] != null ? parsePx(styles['margin-top'], d.mt) : d.mt;
-  const mb = styles['margin-bottom'] != null ? parsePx(styles['margin-bottom'], d.mb) : d.mb;
+  const marginFromShorthand = parseMarginShorthand(styles.margin, d.mt, d.mb);
+  const mt = styles['margin-top'] != null ? parsePx(styles['margin-top'], d.mt) : marginFromShorthand.top;
+  const mb = styles['margin-bottom'] != null ? parsePx(styles['margin-bottom'], d.mb) : marginFromShorthand.bottom;
   return { mt, mb };
 }
 
@@ -113,4 +133,5 @@ module.exports = {
   styleColor,
   textAlign,
   lineGapFor,
+  parseMarginShorthand,
 };

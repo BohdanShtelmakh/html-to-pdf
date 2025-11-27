@@ -5,7 +5,7 @@ const { makePdf } = require('./obj-pdf');
 const { generatePDF } = require('./puppeter-sample');
 
 async function main() {
-  const [input = 'sample3.html', manualOutput = `output_${Date.now()}.pdf`, browserOutput = 'output_pup.pdf'] =
+  const [input = 'sample.html', manualOutput = `output_my.pdf`, browserOutput = 'output_pup.pdf'] =
     process.argv.slice(2);
   const absoluteInput = path.resolve(process.cwd(), input);
   if (!fs.existsSync(absoluteInput)) {

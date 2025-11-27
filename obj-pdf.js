@@ -3,11 +3,13 @@ const PDFDocument = require('pdfkit');
 const { Layout } = require('./pdf/layout');
 const { renderNode } = require('./pdf/render-node');
 
-async function makePdf(json, outputPath = 'output.pdf') {
+async function makePdf(json, outputPath = 'output.pdf', options = {}) {
+
+  
   const doc = new PDFDocument({
     autoFirstPage: true,
     size: 'A4',
-    margins: { top: '10mm', bottom: '10mm', left: '5mm', right: '5mm' },
+    margins: options.margins || { top: '8mm', bottom: '8mm', left: '8mm', right: '8mm' },
   });
   doc.pipe(fs.createWriteStream(outputPath));
 

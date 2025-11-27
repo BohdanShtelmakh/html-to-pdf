@@ -60,6 +60,7 @@ async function renderNode(node, ctx) {
     const size = styleNumber(styles, 'font-size', defaultFontSizeFor(tag));
     const gap = lineGapFor(size, styles, tag);
     const text = gatherPlainText(node);
+    selectFontForInline(doc, styles, true, false, size);
     const h = doc.heightOfString(text, {
       width: layout.contentWidth(),
       align,
@@ -67,11 +68,7 @@ async function renderNode(node, ctx) {
     });
     layout.ensureSpace(h);
 
-    doc
-      .fillColor(color)
-      .font('Times-Bold')
-      .fontSize(size)
-      .text(text, layout.x, layout.y, { width: layout.contentWidth(), align, lineGap: gap });
+    doc.fillColor(color).text(text, layout.x, layout.y, { width: layout.contentWidth(), align, lineGap: gap });
 
     layout.y = Math.max(layout.y, doc.y);
     finishBlock();
@@ -83,6 +80,7 @@ async function renderNode(node, ctx) {
     const gap = lineGapFor(size, styles, tag);
     const runs = inlineRuns(node);
     const plain = runs.map((r) => r.text).join('');
+    selectFontForInline(doc, styles, false, false, size);
     const h = doc.heightOfString(plain, {
       width: layout.contentWidth(),
       align,
@@ -113,23 +111,32 @@ async function renderNode(node, ctx) {
 
   if (tag === 'div') {
     const padding = styleNumber(styles, 'padding', 0);
+    const paddingTop = styleNumber(styles, 'padding-top', padding);
+    const paddingBottom = styleNumber(styles, 'padding-bottom', padding);
     const bg = styleColor(styles, 'background-color', null);
     const borderLeft = styles['border-left'] ? parsePx(styles['border-left'].split(' ')[0], 0) : 0;
+    const borderBottom = styles['border-bottom'] ? parsePx(styles['border-bottom'].split(' ')[0], 0) : 0;
+    const borderBottomColor = styles['border-bottom']
+      ? styleColor(styles, 'border-bottom-color', styles['border-bottom'].split(' ').slice(-1)[0])
+      : '#333333';
     const startY = layout.y;
 
-    if (padding || bg || borderLeft) {
-      layout.y += padding || 0;
-    }
+    if (paddingTop || bg || borderLeft || borderBottom) layout.y += paddingTop; // apply top padding
 
     for (const child of node.children || []) {
       /* eslint-disable no-await-in-loop */
       await renderNode(child, ctx);
     }
 
-    const endY = layout.y;
-    const boxH = endY - startY + (padding || 0);
+    if (layout.pendingBottomMargin) {
+      layout.cursorToNextLine(layout.pendingBottomMargin);
+      layout.pendingBottomMargin = 0;
+    }
 
-    if ((bg || borderLeft) && boxH > 0) {
+    const endY = layout.y;
+    const boxH = endY - startY + paddingBottom; // include bottom padding
+
+    if ((bg || borderLeft || borderBottom) && boxH > 0) {
       const x = layout.x;
       const w = layout.contentWidth();
       if (bg) {
@@ -138,9 +145,16 @@ async function renderNode(node, ctx) {
       if (borderLeft) {
         doc.save().rect(x, startY, borderLeft, boxH).fill('#333333').restore();
       }
+      if (borderBottom) {
+        doc
+          .save()
+          .rect(x, startY + boxH - borderBottom, w, borderBottom) // draw after children
+          .fill(borderBottomColor || '#333333')
+          .restore();
+      }
     }
 
-    if (padding) layout.cursorToNextLine(padding);
+    if (paddingBottom || borderBottom) layout.cursorToNextLine(paddingBottom + borderBottom);
     finishBlock();
     return;
   }

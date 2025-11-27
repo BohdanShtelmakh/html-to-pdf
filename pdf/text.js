@@ -1,16 +1,22 @@
 const { BASE_PT, mergeStyles, styleNumber } = require('./style');
 
-function selectFontForInline(doc, styles, strong = false, italic = false) {
-  const requested = styleNumber(styles, 'font-size', BASE_PT);
+function selectFontForInline(doc, styles, strong = false, italic = false, sizeOverride = null) {
+  const requested = sizeOverride != null ? sizeOverride : styleNumber(styles, 'font-size', BASE_PT);
   const size = requested || BASE_PT;
 
-  const isBold = strong || (!!styles['font-weight'] && String(styles['font-weight']) >= '600');
+  const isBold =
+    strong ||
+    (!!styles['font-weight'] && (String(styles['font-weight']) >= '600' || String(styles['font-weight']).toLowerCase() === 'bold'));
   const isItalic = italic || (styles['font-style'] || '').toLowerCase() === 'italic';
 
-  let fontName = 'Times-Roman';
-  if (isBold && isItalic) fontName = 'Times-BoldItalic';
-  else if (isBold) fontName = 'Times-Bold';
-  else if (isItalic) fontName = 'Times-Italic';
+  const family = (styles['font-family'] || '').toLowerCase();
+  const wantsSans =
+    family.includes('arial') || family.includes('helvetica') || family.includes('sans-serif') || family.includes('sans');
+
+  let fontName = wantsSans ? 'Helvetica' : 'Times-Roman';
+  if (isBold && isItalic) fontName = wantsSans ? 'Helvetica-BoldOblique' : 'Times-BoldItalic';
+  else if (isBold) fontName = wantsSans ? 'Helvetica-Bold' : 'Times-Bold';
+  else if (isItalic) fontName = wantsSans ? 'Helvetica-Oblique' : 'Times-Italic';
 
   doc.font(fontName).fontSize(size);
 }
