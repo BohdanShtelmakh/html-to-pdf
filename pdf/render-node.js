@@ -68,9 +68,10 @@ async function renderNode(node, ctx) {
     });
     layout.ensureSpace(h);
 
+    const startY = layout.y;
     doc.fillColor(color).text(text, layout.x, layout.y, { width: layout.contentWidth(), align, lineGap: gap });
 
-    layout.y = Math.max(layout.y, doc.y);
+    layout.y = Math.max(layout.y, startY + h);
     finishBlock();
     return;
   }
@@ -90,21 +91,28 @@ async function renderNode(node, ctx) {
 
     doc.fillColor(color);
     doc.x = layout.x;
-    doc.y = layout.y;
+    const startY = layout.y;
+    doc.y = startY;
 
     for (const run of runs) {
       const s = { ...styles, ...(run.styles || {}) };
       selectFontForInline(doc, s, !!run.bold, !!run.italic);
+      const ls = styleNumber(s, 'letter-spacing', null, { baseSize: size });
+      const ws = styleNumber(s, 'word-spacing', null, { baseSize: size });
+      if (ls != null) doc.characterSpacing(ls);
       doc.fillColor(styleColor(s, 'color', color)).text(run.text, {
         width: layout.contentWidth(),
         align,
         lineGap: gap,
         continued: true,
+        underline: !!run.underline,
       });
+      if (ls != null) doc.characterSpacing(0);
+      if (ws != null) doc.x += ws; // crude word spacing adjustment between runs
     }
     doc.text('', { continued: false });
 
-    layout.y = Math.max(layout.y, doc.y);
+    layout.y = Math.max(layout.y, startY + h);
     finishBlock();
     return;
   }

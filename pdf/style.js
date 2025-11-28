@@ -47,10 +47,7 @@ function defaultMarginsFor(tag) {
 
 function parseMarginShorthand(val, fallbackTop, fallbackBottom) {
   if (!val) return { top: fallbackTop, bottom: fallbackBottom };
-  const parts = String(val)
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean);
+  const parts = String(val).trim().split(/\s+/).filter(Boolean);
   if (!parts.length) return { top: fallbackTop, bottom: fallbackBottom };
   const nums = parts.map((p) => parsePx(p, null)).filter((n) => n != null);
   if (!nums.length) return { top: fallbackTop, bottom: fallbackBottom };
@@ -69,6 +66,10 @@ function computedMargins(styles, tag) {
   const marginFromShorthand = parseMarginShorthand(styles.margin, d.mt, d.mb);
   const mt = styles['margin-top'] != null ? parsePx(styles['margin-top'], d.mt) : marginFromShorthand.top;
   const mb = styles['margin-bottom'] != null ? parsePx(styles['margin-bottom'], d.mb) : marginFromShorthand.bottom;
+  if (tag === 'p') {
+    // Ensure paragraphs retain at least their default spacing so they don't visually stick together.
+    return { mt: Math.max(mt, d.mt), mb: Math.max(mb, d.mb) };
+  }
   return { mt, mb };
 }
 
@@ -133,7 +134,10 @@ function mergeStyles(node) {
 }
 
 function styleNumber(styles, key, fallback, opts = {}) {
-  return parsePxWithOptions(styles[key], fallback, { base: opts.baseSize ?? BASE_PT, percentBase: opts.percentBase ?? null });
+  return parsePxWithOptions(styles[key], fallback, {
+    base: opts.baseSize ?? BASE_PT,
+    percentBase: opts.percentBase ?? null,
+  });
 }
 
 function styleColor(styles, key, fallback) {

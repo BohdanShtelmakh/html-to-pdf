@@ -1,4 +1,4 @@
-const { BASE_PT, mergeStyles, styleNumber } = require('./style');
+const { BASE_PT, mergeStyles, styleNumber, lineHeightValue, textDecorations, styleColor } = require('./style');
 
 function selectFontForInline(doc, styles, strong = false, italic = false, sizeOverride = null) {
   const requested = sizeOverride != null ? sizeOverride : styleNumber(styles, 'font-size', BASE_PT);
@@ -40,6 +40,15 @@ function inlineRuns(node, parentStyles = {}) {
     if (tag === 'b' || tag === 'strong') next.bold = true;
     if (tag === 'i' || tag === 'em') next.italic = true;
     if (tag === 'u') next.underline = true;
+
+    const deco = textDecorations(styles);
+    if (deco.underline) next.underline = true;
+    if (deco.lineThrough) next.lineThrough = true;
+
+    const ls = styles['letter-spacing'];
+    const ws = styles['word-spacing'];
+    if (ls != null) next.letterSpacing = ls;
+    if (ws != null) next.wordSpacing = ws;
 
     (n.children || []).forEach((child) => walk(child, next));
   }
