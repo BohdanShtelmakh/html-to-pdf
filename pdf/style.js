@@ -1,6 +1,7 @@
 const BASE_PT = 13; // Browser-like base font size
 const BODY_LH = 1.5;
 const em = (n, base = BASE_PT) => n * base;
+const PX_PER_IN = 72; // pdfkit uses points; treat px/pt equivalently here.
 
 function tagDefaults(tag) {
   switch ((tag || '').toLowerCase()) {
@@ -72,13 +73,44 @@ function computedMargins(styles, tag) {
 }
 
 function parsePx(val, fallback = 0) {
+  return parsePxWithOptions(val, fallback, { base: BASE_PT });
+}
+
+/** Parse lengths with basic units into pdf points. Supports px/pt/in/cm/mm/em/rem/% (with optional bases). */
+function parsePxWithOptions(val, fallback = 0, { base = BASE_PT, percentBase = null } = {}) {
   if (val == null) return fallback;
-  if (typeof val === 'number') return val;
-  const m = String(val)
-    .trim()
-    .match(/^(-?\d+(\.\d+)?)px$/i);
-  if (m) return parseFloat(m[1]);
-  const num = parseFloat(val);
+  if (typeof val === 'number' && Number.isFinite(val)) return val;
+  const s = String(val).trim();
+  if (!s) return fallback;
+
+  const unitMatch = s.match(/^(-?\d+(\.\d+)?)(px|pt|in|cm|mm|em|rem|%)$/i);
+  if (unitMatch) {
+    const num = parseFloat(unitMatch[1]);
+    const unit = unitMatch[3].toLowerCase();
+    switch (unit) {
+      case 'px':
+      case 'pt':
+        return num;
+      case 'in':
+        return num * PX_PER_IN;
+      case 'cm':
+        return num * (PX_PER_IN / 2.54);
+      case 'mm':
+        return num * (PX_PER_IN / 25.4);
+      case 'em':
+        return num * base;
+      case 'rem':
+        return num * BASE_PT;
+      case '%': {
+        if (percentBase != null) return (num / 100) * percentBase;
+        return fallback;
+      }
+      default:
+        return fallback;
+    }
+  }
+
+  const num = parseFloat(s);
   return Number.isFinite(num) ? num : fallback;
 }
 
@@ -100,8 +132,8 @@ function mergeStyles(node) {
   return styles;
 }
 
-function styleNumber(styles, key, fallback) {
-  return parsePx(styles[key], fallback);
+function styleNumber(styles, key, fallback, opts = {}) {
+  return parsePxWithOptions(styles[key], fallback, { base: opts.baseSize ?? BASE_PT, percentBase: opts.percentBase ?? null });
 }
 
 function styleColor(styles, key, fallback) {
@@ -113,9 +145,32 @@ function textAlign(styles) {
   return ['left', 'right', 'center', 'justify'].includes(v) ? v : 'left';
 }
 
+function lineHeightValue(styles, fontSize, tag) {
+  const raw = styles['line-height'];
+  if (raw == null) return fontSize * defaultLineHeightFor(tag);
+  const str = String(raw).trim();
+  if (!str) return fontSize * defaultLineHeightFor(tag);
+  // Unitless => multiplier
+  if (/^-?\d+(\.\d+)?$/.test(str)) {
+    const num = parseFloat(str);
+    return num > 0 && num < 10 ? fontSize * num : num;
+  }
+  // With unit
+  return parsePxWithOptions(str, fontSize * defaultLineHeightFor(tag), { base: fontSize });
+}
+
 function lineGapFor(size, styles, tag) {
-  const lh = styles['line-height'] ? parseFloat(String(styles['line-height'])) : defaultLineHeightFor(tag);
-  return Math.max(0, size * (lh - 1));
+  const lh = lineHeightValue(styles, size, tag);
+  return Math.max(0, lh - size);
+}
+
+function textDecorations(styles) {
+  const val = (styles['text-decoration'] || styles['text-decoration-line'] || '').toLowerCase();
+  const parts = val.split(/\s+/).filter(Boolean);
+  return {
+    underline: parts.includes('underline'),
+    lineThrough: parts.includes('line-through') || parts.includes('strike') || parts.includes('strikethrough'),
+  };
 }
 
 module.exports = {
@@ -127,11 +182,14 @@ module.exports = {
   defaultLineHeightFor,
   computedMargins,
   parsePx,
+  parsePxWithOptions,
   parseColor,
   mergeStyles,
   styleNumber,
   styleColor,
   textAlign,
   lineGapFor,
+  lineHeightValue,
+  textDecorations,
   parseMarginShorthand,
 };
