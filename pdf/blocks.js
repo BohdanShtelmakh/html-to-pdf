@@ -42,34 +42,51 @@ async function renderList(node, ctx, ordered = false) {
   }
 }
 
+function normalizeCodeText(raw) {
+  if (!raw) return '';
+  const lines = raw.split(/\r?\n/);
+  // Drop leading/trailing empty/whitespace-only lines.
+  while (lines.length && /^\s*$/.test(lines[0])) lines.shift();
+  while (lines.length && /^\s*$/.test(lines[lines.length - 1])) lines.pop();
+  // Dedent by common indent of non-empty lines.
+  let indent = Infinity;
+  for (const l of lines) {
+    if (!l.trim()) continue;
+    const m = l.match(/^(\s*)/);
+    indent = Math.min(indent, m ? m[1].length : 0);
+  }
+  if (!Number.isFinite(indent)) indent = 0;
+  return lines.map((l) => l.slice(indent)).join('\n');
+}
+
 async function renderPre(node, ctx, styles) {
   const { doc, layout } = ctx;
-  const codeText = gatherPlainText(node);
-  const fs = styleNumber(styles, 'font-size', 11);
-  const lineGap = Math.max(0, fs * (1.3 - 1));
-  const padding = 6;
+  const codeText = normalizeCodeText(gatherPlainText(node));
+  const fs = styleNumber(styles, 'font-size', 10);
+  const lineGap = 0;
+  const padding = styleNumber(styles, 'padding', 0);
+
+  doc.font('Courier').fontSize(fs).fillColor('#000');
 
   const h =
-    doc.heightOfString(codeText, {
+    doc.heightOfString(codeText.replace(/\n/g, ''), {
       width: layout.contentWidth() - padding * 2,
       lineGap,
     }) +
     padding * 2;
 
-  layout.ensureSpace(h + 4);
+  layout.ensureSpace(h);
+
   const x = layout.x;
   const y = layout.y;
   const w = layout.contentWidth();
 
-  doc.save().rect(x, y, w, h).fill('#f5f5f5').restore();
-
-  doc.font('Courier').fontSize(fs).fillColor('#000');
   doc.text(codeText, x + padding, y + padding, {
     width: w - padding * 2,
     lineGap,
   });
 
-  layout.y = y + h + 2;
+  layout.y = y + h;
 }
 
 module.exports = { renderList, renderPre };

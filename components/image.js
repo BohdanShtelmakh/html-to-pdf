@@ -8,6 +8,8 @@ async function renderImage(node, ctx) {
   const styles = mergeStyles(node);
   let width = styleNumber(styles, 'width', null);
   let height = styleNumber(styles, 'height', null);
+  const attrWidth = parsePx(node.attrs?.width, null);
+  const attrHeight = parsePx(node.attrs?.height, null);
 
   if ((!width || !height) && node.attrs && typeof node.attrs.style === 'string') {
     const map = {};
@@ -18,6 +20,11 @@ async function renderImage(node, ctx) {
     if (!width && map.width) width = parsePx(map.width, null);
     if (!height && map.height) height = parsePx(map.height, null);
   }
+  if (!width && attrWidth != null) width = attrWidth;
+  if (!height && attrHeight != null) height = attrHeight;
+
+  const widthSpecified = width != null;
+  const heightSpecified = height != null;
 
   const src = node.attrs?.src;
   if (!src) return;
@@ -48,17 +55,26 @@ async function renderImage(node, ctx) {
   }
 
   const maxW = layout.contentWidth();
-  const maxH = Number.isFinite(styleNumber(styles, 'max-height', Infinity)) ? styleNumber(styles, 'max-height', Infinity) : Infinity;
+  const maxH = Number.isFinite(styleNumber(styles, 'max-height', Infinity))
+    ? styleNumber(styles, 'max-height', Infinity)
+    : Infinity;
   const minW = styleNumber(styles, 'min-width', 0);
   const minH = styleNumber(styles, 'min-height', 0);
-  const maxWidthStyle = styleNumber(styles, 'max-width', maxW);
+  const maxWidthStyle = styleNumber(styles, 'max-width', widthSpecified ? Infinity : maxW);
 
-  const aspect = intrinsicWidth && intrinsicHeight ? intrinsicWidth / intrinsicHeight : null;
+  const aspect =
+    widthSpecified && heightSpecified
+      ? width / height
+      : attrWidth && attrHeight
+      ? attrWidth / attrHeight
+      : intrinsicWidth && intrinsicHeight
+      ? intrinsicWidth / intrinsicHeight
+      : null;
 
   // Fill missing dimension based on intrinsic aspect ratio if available.
   if (!width && !height) {
     width = Math.min(intrinsicWidth || 400, maxW);
-    height = aspect ? width / aspect : (intrinsicHeight ? intrinsicHeight * (width / intrinsicWidth) : width * 0.6);
+    height = aspect ? width / aspect : intrinsicHeight ? intrinsicHeight * (width / intrinsicWidth) : width * 0.6;
   } else if (width && !height && aspect) {
     height = width / aspect;
   } else if (height && !width && aspect) {
@@ -74,11 +90,17 @@ async function renderImage(node, ctx) {
   height = Math.max(minH, Math.min(height, maxH));
 
   // Cap to available content width while preserving ratio.
-  if (width > maxW) {
+  const shouldCapToContent = !(widthSpecified && heightSpecified);
+  if (shouldCapToContent && width > maxW) {
     const scale = maxW / width;
     width = maxW;
     height = height * scale;
   }
+
+  // Convert CSS px-like units to PDF points (72dpi vs 96dpi in CSS).
+  const PX_TO_PT = 72 / 96;
+  width *= PX_TO_PT;
+  height *= PX_TO_PT;
 
   const estimatedH = height || (width ? width * 0.5 : 120);
   layout.ensureSpace(estimatedH + 6);
