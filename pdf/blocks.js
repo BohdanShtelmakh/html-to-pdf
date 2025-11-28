@@ -14,6 +14,7 @@ async function renderList(node, ctx, ordered = false) {
 
     const lineGap = Math.max(0, fontSize * (1.2 - 1));
     doc.font('Helvetica').fontSize(fontSize).fillColor('#000');
+
     const h = doc.heightOfString(bullet + text, {
       width: layout.contentWidth(),
       lineGap,

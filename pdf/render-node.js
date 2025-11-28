@@ -39,7 +39,7 @@ async function renderNode(node, ctx) {
   }
 
   if (tag === 'table') {
-    await renderTable(node, ctx, styles);
+    await renderTable(node, ctx, styles || {});
     finishBlock();
     return;
   }
@@ -119,6 +119,8 @@ async function renderNode(node, ctx) {
     const borderBottomColor = styles['border-bottom']
       ? styleColor(styles, 'border-bottom-color', styles['border-bottom'].split(' ').slice(-1)[0])
       : '#333333';
+    // Ensure we have space for the box chrome before drawing content.
+    layout.ensureSpace(paddingTop + paddingBottom + borderBottom);
     const startY = layout.y;
 
     if (paddingTop || bg || borderLeft || borderBottom) layout.y += paddingTop; // apply top padding
@@ -154,6 +156,8 @@ async function renderNode(node, ctx) {
       }
     }
 
+    // Ensure we don't overrun the page when adding bottom padding/border.
+    layout.ensureSpace(paddingBottom + borderBottom);
     if (paddingBottom || borderBottom) layout.cursorToNextLine(paddingBottom + borderBottom);
     finishBlock();
     return;
