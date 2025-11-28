@@ -1,7 +1,7 @@
-const BASE_PT = 13; // Browser-like base font size
-const BODY_LH = 1.5;
+const BASE_PT = 12;
+const BODY_LH = 1.2;
 const em = (n, base = BASE_PT) => n * base;
-const PX_PER_IN = 72; // pdfkit uses points; treat px/pt equivalently here.
+const PX_PER_IN = 72;
 
 function tagDefaults(tag) {
   switch ((tag || '').toLowerCase()) {
@@ -18,7 +18,7 @@ function tagDefaults(tag) {
     case 'h6':
       return { size: em(0.75), mt: em(2), mb: em(2), lh: 1.45, bold: true };
     case 'p':
-      return { size: BASE_PT, mt: em(1), mb: em(1), lh: BODY_LH, bold: false };
+      return { size: BASE_PT, mt: 12, mb: 4, lh: BODY_LH, bold: false };
     case 'pre':
     case 'code':
       return { size: em(0.92), mt: em(1), mb: em(1), lh: 1.35, bold: false };
@@ -66,10 +66,6 @@ function computedMargins(styles, tag) {
   const marginFromShorthand = parseMarginShorthand(styles.margin, d.mt, d.mb);
   const mt = styles['margin-top'] != null ? parsePx(styles['margin-top'], d.mt) : marginFromShorthand.top;
   const mb = styles['margin-bottom'] != null ? parsePx(styles['margin-bottom'], d.mb) : marginFromShorthand.bottom;
-  if (tag === 'p') {
-    // Ensure paragraphs retain at least their default spacing so they don't visually stick together.
-    return { mt: Math.max(mt, d.mt), mb: Math.max(mb, d.mb) };
-  }
   return { mt, mb };
 }
 
@@ -150,21 +146,26 @@ function textAlign(styles) {
 }
 
 function lineHeightValue(styles, fontSize, tag) {
+  const CHROME_LH_FACTOR = 0.82;
+
   const raw = styles['line-height'];
-  if (raw == null) return fontSize * defaultLineHeightFor(tag);
+  if (raw == null) return fontSize * defaultLineHeightFor(tag) * CHROME_LH_FACTOR;
+
   const str = String(raw).trim();
-  if (!str) return fontSize * defaultLineHeightFor(tag);
-  // Unitless => multiplier
+  if (!str) return fontSize * defaultLineHeightFor(tag) * CHROME_LH_FACTOR;
+
   if (/^-?\d+(\.\d+)?$/.test(str)) {
     const num = parseFloat(str);
-    return num > 0 && num < 10 ? fontSize * num : num;
+    return (num > 0 && num < 10 ? fontSize * num : num) * CHROME_LH_FACTOR;
   }
-  // With unit
-  return parsePxWithOptions(str, fontSize * defaultLineHeightFor(tag), { base: fontSize });
+
+  return parsePxWithOptions(str, fontSize * defaultLineHeightFor(tag), { base: fontSize }) * CHROME_LH_FACTOR;
 }
 
 function lineGapFor(size, styles, tag) {
   const lh = lineHeightValue(styles, size, tag);
+  console.log(lh);
+
   return Math.max(0, lh - size);
 }
 

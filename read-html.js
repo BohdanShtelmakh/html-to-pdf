@@ -235,9 +235,12 @@ async function parseHtmlToObject(html, { fetchExternalCss = true, rootSelector =
   const root = rootSelector ? document.querySelector(rootSelector) : document.documentElement;
   if (!root) throw new Error(`Root selector "${rootSelector}" not found`);
 
+  // Compute styles for the root element as well so page margins can reflect body/html CSS.
+  const rootStyles = computeStylesForElement(root, rules, {});
+
   const nodes = [];
   for (const child of root.childNodes) {
-    const obj = buildObjectTree(child, rules, {});
+    const obj = buildObjectTree(child, rules, rootStyles);
     if (obj) nodes.push(obj);
   }
 
@@ -245,7 +248,7 @@ async function parseHtmlToObject(html, { fetchExternalCss = true, rootSelector =
     type: 'root',
     tag: root.tagName?.toLowerCase?.() || 'root',
     attrs: attrsToObject(root.attributes || []),
-    styles: {},
+    styles: rootStyles,
     children: nodes,
   };
 }
