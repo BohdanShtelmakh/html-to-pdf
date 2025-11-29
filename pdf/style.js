@@ -164,7 +164,6 @@ function lineHeightValue(styles, fontSize, tag) {
 
 function lineGapFor(size, styles, tag) {
   const lh = lineHeightValue(styles, size, tag);
-  console.log(lh);
 
   return Math.max(0, lh - size);
 }
