@@ -13,6 +13,31 @@ const {
 const { inlineRuns, selectFontForInline, gatherPlainText } = require('./text');
 const { renderList, renderPre } = require('./blocks');
 
+const INLINE_TAGS = new Set([
+  'span',
+  'strong',
+  'b',
+  'em',
+  'i',
+  'u',
+  'label',
+  'small',
+  'big',
+  'sub',
+  'sup',
+  'code',
+  'a',
+]);
+
+function isInlineOnly(node) {
+  if (!node || !node.children) return false;
+  return (node.children || []).every((child) => {
+    if (child.type === 'text') return true;
+    if (child.type === 'element') return INLINE_TAGS.has((child.tag || '').toLowerCase()) && isInlineOnly(child);
+    return false;
+  });
+}
+
 async function renderNode(node, ctx) {
   const { doc, layout } = ctx;
   if (!node) return;
@@ -101,7 +126,11 @@ async function renderNode(node, ctx) {
         doc.save().rect(originalX, startY, w, boxH).fill(bg).restore();
       }
       if (borderLeft) {
-        doc.save().rect(originalX, startY, borderLeft, boxH).fill(borderLeftColor || '#333333').restore();
+        doc
+          .save()
+          .rect(originalX, startY, borderLeft, boxH)
+          .fill(borderLeftColor || '#333333')
+          .restore();
       }
     }
 
@@ -113,18 +142,35 @@ async function renderNode(node, ctx) {
     const size = styleNumber(styles, 'font-size', defaultFontSizeFor(tag));
     const gap = lineGapFor(size, styles, tag);
     const text = gatherPlainText(node);
+    const borderBottom = styles['border-bottom'] ? parsePx(styles['border-bottom'].split(' ')[0], 0) : 0;
+    const borderBottomColor = styles['border-bottom']
+      ? styleColor(styles, 'border-bottom-color', styles['border-bottom'].split(' ').slice(-1)[0])
+      : '#333333';
     selectFontForInline(doc, styles, true, false, size);
     const h = doc.heightOfString(text, {
       width: layout.contentWidth(),
       align,
       lineGap: gap,
     });
-    layout.ensureSpace(h);
+
+    layout.ensureSpace(h + borderBottom);
 
     const startY = layout.y;
     doc.fillColor(color).text(text, layout.x, layout.y, { width: layout.contentWidth(), align, lineGap: gap });
 
-    layout.y = Math.max(layout.y, startY + h);
+    if (borderBottom) {
+      const drawY = startY + h + borderBottom / 2;
+      doc
+        .save()
+        .lineWidth(borderBottom)
+        .strokeColor(borderBottomColor)
+        .moveTo(layout.x, drawY)
+        .lineTo(layout.x + layout.contentWidth(), drawY)
+        .stroke()
+        .restore();
+    }
+
+    layout.y = Math.max(layout.y, startY + h + borderBottom);
     finishBlock();
     return;
   }
@@ -159,7 +205,11 @@ async function renderNode(node, ctx) {
       doc.save().rect(layout.x, layout.y, layout.contentWidth(), boxHeight).fill(bg).restore();
     }
     if (borderLeft && boxHeight > 0) {
-      doc.save().rect(layout.x, layout.y, borderLeft, boxHeight).fill(borderLeftColor || '#333333').restore();
+      doc
+        .save()
+        .rect(layout.x, layout.y, borderLeft, boxHeight)
+        .fill(borderLeftColor || '#333333')
+        .restore();
     }
 
     doc.fillColor(color);
@@ -194,6 +244,8 @@ async function renderNode(node, ctx) {
     const padding = styleNumber(styles, 'padding', 0);
     const paddingTop = styleNumber(styles, 'padding-top', padding);
     const paddingBottom = styleNumber(styles, 'padding-bottom', padding);
+    const paddingLeft = styleNumber(styles, 'padding-left', padding);
+    const paddingRight = styleNumber(styles, 'padding-right', padding);
     const bg = styleColor(styles, 'background-color', null);
     const borderLeft = styles['border-left'] ? parsePx(styles['border-left'].split(' ')[0], 0) : 0;
     const borderBottom = styles['border-bottom'] ? parsePx(styles['border-bottom'].split(' ')[0], 0) : 0;
@@ -206,10 +258,49 @@ async function renderNode(node, ctx) {
 
     if (paddingTop || bg || borderLeft || borderBottom) layout.y += paddingTop; // apply top padding
 
-    for (const child of node.children || []) {
-      /* eslint-disable no-await-in-loop */
-      await renderNode(child, ctx);
+    const originalX = layout.x;
+    const originalContentWidth = layout.contentWidth;
+    layout.x = layout.x + paddingLeft;
+    layout.contentWidth = () => originalContentWidth() - paddingLeft - paddingRight;
+
+    const inlineOnly = isInlineOnly(node);
+    if (inlineOnly) {
+      const size = styleNumber(styles, 'font-size', BASE_PT);
+      const gap = lineGapFor(size, styles, tag);
+      const runs = inlineRuns(node);
+      const plain = runs.map((r) => r.text).join('');
+      const h = doc.heightOfString(plain, {
+        width: layout.contentWidth(),
+        align,
+        lineGap: gap,
+      });
+      layout.ensureSpace(h);
+      doc.fillColor(styleColor(styles, 'color', '#000'));
+      doc.x = layout.x;
+      const startYInline = layout.y;
+      doc.y = startYInline;
+      for (const run of runs) {
+        const s = { ...styles, ...(run.styles || {}) };
+        selectFontForInline(doc, s, !!run.bold, !!run.italic);
+        doc.fillColor(styleColor(s, 'color', '#000')).text(run.text, {
+          width: layout.contentWidth(),
+          align,
+          lineGap: gap,
+          continued: true,
+        });
+      }
+      doc.text('', { continued: false });
+      layout.y = Math.max(layout.y, startYInline + h);
+    } else {
+      for (const child of node.children || []) {
+        /* eslint-disable no-await-in-loop */
+        await renderNode(child, ctx);
+      }
     }
+
+    // Restore layout width/x
+    layout.contentWidth = originalContentWidth;
+    layout.x = originalX;
 
     if (layout.pendingBottomMargin) {
       layout.cursorToNextLine(layout.pendingBottomMargin);
