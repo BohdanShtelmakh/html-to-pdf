@@ -48,6 +48,7 @@ async function makePdf(json, outputPath = 'output.pdf', options = {}) {
     bottom: 0,
     left: 0,
   }; // keep a small inset even when CSS margins are zero
+
   const doc = new PDFDocument({
     autoFirstPage: true,
     size: 'A4',

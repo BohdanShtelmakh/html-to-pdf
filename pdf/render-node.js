@@ -56,6 +56,59 @@ async function renderNode(node, ctx) {
     return;
   }
 
+  if (tag === 'blockquote') {
+    const padding = styleNumber(styles, 'padding', 0);
+    const paddingTop = styleNumber(styles, 'padding-top', padding);
+    const paddingBottom = styleNumber(styles, 'padding-bottom', padding);
+    const paddingLeft = styleNumber(styles, 'padding-left', padding);
+    const paddingRight = styleNumber(styles, 'padding-right', padding);
+    const bg = styleColor(styles, 'background-color', null);
+    const borderLeft = styles['border-left'] ? parsePx(styles['border-left'].split(' ')[0], 0) : 0;
+    const borderLeftColor = styles['border-left']
+      ? styleColor(styles, 'border-left-color', styles['border-left'].split(' ').slice(-1)[0])
+      : '#333333';
+
+    layout.ensureSpace(paddingTop + paddingBottom);
+    const startY = layout.y;
+
+    // Apply top padding
+    if (paddingTop) layout.y += paddingTop;
+
+    // Temporarily shrink available width for horizontal padding
+    const originalX = layout.x;
+    const originalContentWidth = layout.contentWidth;
+    layout.x = layout.x + paddingLeft;
+    layout.contentWidth = () => originalContentWidth() - paddingLeft - paddingRight;
+
+    for (const child of node.children || []) {
+      /* eslint-disable no-await-in-loop */
+      await renderNode(child, ctx);
+    }
+
+    // Restore layout width/x
+    layout.contentWidth = originalContentWidth;
+    layout.x = originalX;
+
+    // Apply bottom padding
+    if (paddingBottom) layout.cursorToNextLine(paddingBottom);
+
+    const endY = layout.y;
+    const boxH = endY - startY;
+    const w = originalContentWidth();
+
+    if ((bg || borderLeft) && boxH > 0) {
+      if (bg) {
+        doc.save().rect(originalX, startY, w, boxH).fill(bg).restore();
+      }
+      if (borderLeft) {
+        doc.save().rect(originalX, startY, borderLeft, boxH).fill(borderLeftColor || '#333333').restore();
+      }
+    }
+
+    finishBlock();
+    return;
+  }
+
   if (['h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(tag)) {
     const size = styleNumber(styles, 'font-size', defaultFontSizeFor(tag));
     const gap = lineGapFor(size, styles, tag);
@@ -81,18 +134,38 @@ async function renderNode(node, ctx) {
     const gap = lineGapFor(size, styles, tag);
     const runs = inlineRuns(node);
     const plain = runs.map((r) => r.text).join('');
+    const padding = styleNumber(styles, 'padding', 0);
+    const paddingTop = styleNumber(styles, 'padding-top', padding);
+    const paddingBottom = styleNumber(styles, 'padding-bottom', padding);
+    const paddingLeft = styleNumber(styles, 'padding-left', padding);
+    const paddingRight = styleNumber(styles, 'padding-right', padding);
+    const bg = styleColor(styles, 'background-color', null);
+    const borderLeft = styles['border-left'] ? parsePx(styles['border-left'].split(' ')[0], 0) : 0;
+    const borderLeftColor = styles['border-left']
+      ? styleColor(styles, 'border-left-color', styles['border-left'].split(' ').slice(-1)[0])
+      : '#333333';
+
     selectFontForInline(doc, styles, false, false, size);
+    const availableWidth = layout.contentWidth() - paddingLeft - paddingRight;
     const h = doc.heightOfString(plain, {
-      width: layout.contentWidth(),
+      width: availableWidth,
       align,
       lineGap: gap,
     });
-    layout.ensureSpace(h);
+    const boxHeight = h + paddingTop + paddingBottom;
+    layout.ensureSpace(boxHeight);
+
+    if (bg && boxHeight > 0) {
+      doc.save().rect(layout.x, layout.y, layout.contentWidth(), boxHeight).fill(bg).restore();
+    }
+    if (borderLeft && boxHeight > 0) {
+      doc.save().rect(layout.x, layout.y, borderLeft, boxHeight).fill(borderLeftColor || '#333333').restore();
+    }
 
     doc.fillColor(color);
-    doc.x = layout.x;
+    doc.x = layout.x + paddingLeft;
     const startY = layout.y;
-    doc.y = startY;
+    doc.y = startY + paddingTop;
 
     for (const run of runs) {
       const s = { ...styles, ...(run.styles || {}) };
@@ -101,7 +174,7 @@ async function renderNode(node, ctx) {
       const ws = styleNumber(s, 'word-spacing', null, { baseSize: size });
       if (ls != null) doc.characterSpacing(ls);
       doc.fillColor(styleColor(s, 'color', color)).text(run.text, {
-        width: layout.contentWidth(),
+        width: availableWidth,
         align,
         lineGap: gap,
         continued: true,
@@ -112,7 +185,7 @@ async function renderNode(node, ctx) {
     }
     doc.text('', { continued: false });
 
-    layout.y = Math.max(layout.y, startY + h);
+    layout.y = Math.max(layout.y, startY + boxHeight);
     finishBlock();
     return;
   }

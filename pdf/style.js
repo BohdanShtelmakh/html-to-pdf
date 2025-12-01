@@ -2,6 +2,7 @@ const BASE_PT = 12;
 const BODY_LH = 1.2;
 const em = (n, base = BASE_PT) => n * base;
 const PX_PER_IN = 72;
+const PX_TO_PT = 72 / 96; // map CSS px to PDF points (browser 96dpi vs PDF 72dpi)
 
 function tagDefaults(tag) {
   switch ((tag || '').toLowerCase()) {
@@ -86,6 +87,7 @@ function parsePxWithOptions(val, fallback = 0, { base = BASE_PT, percentBase = n
     const unit = unitMatch[3].toLowerCase();
     switch (unit) {
       case 'px':
+        return num * PX_TO_PT;
       case 'pt':
         return num;
       case 'in':
