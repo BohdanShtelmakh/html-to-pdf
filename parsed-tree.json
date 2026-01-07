@@ -1,0 +1,935 @@
+{
+  "type": "root",
+  "tag": "body",
+  "attrs": {},
+  "styles": {
+    "font-family": "Arial, sans-serif",
+    "margin-top": "40px",
+    "margin-right": "40px",
+    "margin-bottom": "40px",
+    "margin-left": "40px",
+    "font-size": "14px",
+    "color": "#333"
+  },
+  "children": [
+    {
+      "type": "element",
+      "tag": "h1",
+      "attrs": {},
+      "styles": {
+        "text-align": "center",
+        "margin-bottom": "20px",
+        "border-bottom-width": "2px",
+        "border-bottom-color": "#000",
+        "padding-bottom": "10px"
+      },
+      "children": [
+        {
+          "type": "text",
+          "text": "Checkout Summary"
+        }
+      ]
+    },
+    {
+      "type": "element",
+      "tag": "div",
+      "attrs": {
+        "class": "section"
+      },
+      "styles": {
+        "color": "#333",
+        "font-family": "Arial, sans-serif",
+        "font-size": "14px",
+        "margin-bottom": "20px"
+      },
+      "children": [
+        {
+          "type": "element",
+          "tag": "div",
+          "attrs": {
+            "class": "section-title"
+          },
+          "styles": {
+            "color": "#222",
+            "font-family": "Arial, sans-serif",
+            "font-size": "18px",
+            "font-weight": "bold",
+            "margin-bottom": "8px"
+          },
+          "children": [
+            {
+              "type": "text",
+              "text": "Customer"
+            }
+          ]
+        },
+        {
+          "type": "element",
+          "tag": "div",
+          "attrs": {
+            "class": "line"
+          },
+          "styles": {
+            "color": "#333",
+            "font-family": "Arial, sans-serif",
+            "font-size": "14px",
+            "margin-top": "4px",
+            "margin-right": "0",
+            "margin-bottom": "4px",
+            "margin-left": "0"
+          },
+          "children": [
+            {
+              "type": "element",
+              "tag": "strong",
+              "attrs": {},
+              "styles": {
+                "color": "#333",
+                "font-family": "Arial, sans-serif",
+                "font-size": "14px"
+              },
+              "children": [
+                {
+                  "type": "text",
+                  "text": "Name:"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "text": " John Doe"
+            }
+          ]
+        },
+        {
+          "type": "element",
+          "tag": "div",
+          "attrs": {
+            "class": "line"
+          },
+          "styles": {
+            "color": "#333",
+            "font-family": "Arial, sans-serif",
+            "font-size": "14px",
+            "margin-top": "4px",
+            "margin-right": "0",
+            "margin-bottom": "4px",
+            "margin-left": "0"
+          },
+          "children": [
+            {
+              "type": "element",
+              "tag": "strong",
+              "attrs": {},
+              "styles": {
+                "color": "#333",
+                "font-family": "Arial, sans-serif",
+                "font-size": "14px"
+              },
+              "children": [
+                {
+                  "type": "text",
+                  "text": "Email:"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "text": " john@example.com"
+            }
+          ]
+        },
+        {
+          "type": "element",
+          "tag": "div",
+          "attrs": {
+            "class": "line"
+          },
+          "styles": {
+            "color": "#333",
+            "font-family": "Arial, sans-serif",
+            "font-size": "14px",
+            "margin-top": "4px",
+            "margin-right": "0",
+            "margin-bottom": "4px",
+            "margin-left": "0"
+          },
+          "children": [
+            {
+              "type": "element",
+              "tag": "strong",
+              "attrs": {},
+              "styles": {
+                "color": "#333",
+                "font-family": "Arial, sans-serif",
+                "font-size": "14px"
+              },
+              "children": [
+                {
+                  "type": "text",
+                  "text": "Phone:"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "text": " +1 234 567 890"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "element",
+      "tag": "div",
+      "attrs": {
+        "class": "section"
+      },
+      "styles": {
+        "color": "#333",
+        "font-family": "Arial, sans-serif",
+        "font-size": "14px",
+        "margin-bottom": "20px"
+      },
+      "children": [
+        {
+          "type": "element",
+          "tag": "div",
+          "attrs": {
+            "class": "section-title"
+          },
+          "styles": {
+            "color": "#222",
+            "font-family": "Arial, sans-serif",
+            "font-size": "18px",
+            "font-weight": "bold",
+            "margin-bottom": "8px"
+          },
+          "children": [
+            {
+              "type": "text",
+              "text": "Order Information"
+            }
+          ]
+        },
+        {
+          "type": "element",
+          "tag": "div",
+          "attrs": {
+            "class": "line"
+          },
+          "styles": {
+            "color": "#333",
+            "font-family": "Arial, sans-serif",
+            "font-size": "14px",
+            "margin-top": "4px",
+            "margin-right": "0",
+            "margin-bottom": "4px",
+            "margin-left": "0"
+          },
+          "children": [
+            {
+              "type": "element",
+              "tag": "strong",
+              "attrs": {},
+              "styles": {
+                "color": "#333",
+                "font-family": "Arial, sans-serif",
+                "font-size": "14px"
+              },
+              "children": [
+                {
+                  "type": "text",
+                  "text": "Order ID:"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "text": " #12345"
+            }
+          ]
+        },
+        {
+          "type": "element",
+          "tag": "div",
+          "attrs": {
+            "class": "line"
+          },
+          "styles": {
+            "color": "#333",
+            "font-family": "Arial, sans-serif",
+            "font-size": "14px",
+            "margin-top": "4px",
+            "margin-right": "0",
+            "margin-bottom": "4px",
+            "margin-left": "0"
+          },
+          "children": [
+            {
+              "type": "element",
+              "tag": "strong",
+              "attrs": {},
+              "styles": {
+                "color": "#333",
+                "font-family": "Arial, sans-serif",
+                "font-size": "14px"
+              },
+              "children": [
+                {
+                  "type": "text",
+                  "text": "Date:"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "text": " 2025-01-15"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "element",
+      "tag": "div",
+      "attrs": {
+        "class": "section"
+      },
+      "styles": {
+        "color": "#333",
+        "font-family": "Arial, sans-serif",
+        "font-size": "14px",
+        "margin-bottom": "20px"
+      },
+      "children": [
+        {
+          "type": "element",
+          "tag": "div",
+          "attrs": {
+            "class": "section-title"
+          },
+          "styles": {
+            "color": "#222",
+            "font-family": "Arial, sans-serif",
+            "font-size": "18px",
+            "font-weight": "bold",
+            "margin-bottom": "8px"
+          },
+          "children": [
+            {
+              "type": "text",
+              "text": "Items"
+            }
+          ]
+        },
+        {
+          "type": "element",
+          "tag": "table",
+          "attrs": {},
+          "styles": {
+            "width": "100%",
+            "border-collapse-color": "collapse",
+            "margin-top": "10px"
+          },
+          "children": [
+            {
+              "type": "element",
+              "tag": "tbody",
+              "attrs": {},
+              "styles": {},
+              "children": [
+                {
+                  "type": "element",
+                  "tag": "tr",
+                  "attrs": {},
+                  "styles": {},
+                  "children": [
+                    {
+                      "type": "element",
+                      "tag": "th",
+                      "attrs": {},
+                      "styles": {
+                        "border-width": "1px",
+                        "border-color": "#aaa",
+                        "padding-top": "6px",
+                        "padding-right": "6px",
+                        "padding-bottom": "6px",
+                        "padding-left": "6px",
+                        "text-align": "left",
+                        "background-color": "#f2f2f2"
+                      },
+                      "children": [
+                        {
+                          "type": "text",
+                          "text": "Description"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "element",
+                      "tag": "th",
+                      "attrs": {},
+                      "styles": {
+                        "border-width": "1px",
+                        "border-color": "#aaa",
+                        "padding-top": "6px",
+                        "padding-right": "6px",
+                        "padding-bottom": "6px",
+                        "padding-left": "6px",
+                        "text-align": "left",
+                        "background-color": "#f2f2f2"
+                      },
+                      "children": [
+                        {
+                          "type": "text",
+                          "text": "Qty"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "element",
+                      "tag": "th",
+                      "attrs": {},
+                      "styles": {
+                        "border-width": "1px",
+                        "border-color": "#aaa",
+                        "padding-top": "6px",
+                        "padding-right": "6px",
+                        "padding-bottom": "6px",
+                        "padding-left": "6px",
+                        "text-align": "left",
+                        "background-color": "#f2f2f2"
+                      },
+                      "children": [
+                        {
+                          "type": "text",
+                          "text": "Price"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "element",
+                      "tag": "th",
+                      "attrs": {},
+                      "styles": {
+                        "border-width": "1px",
+                        "border-color": "#aaa",
+                        "padding-top": "6px",
+                        "padding-right": "6px",
+                        "padding-bottom": "6px",
+                        "padding-left": "6px",
+                        "text-align": "left",
+                        "background-color": "#f2f2f2"
+                      },
+                      "children": [
+                        {
+                          "type": "text",
+                          "text": "Total"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "element",
+                  "tag": "tr",
+                  "attrs": {},
+                  "styles": {},
+                  "children": [
+                    {
+                      "type": "element",
+                      "tag": "td",
+                      "attrs": {},
+                      "styles": {
+                        "border-width": "1px",
+                        "border-color": "#aaa",
+                        "padding-top": "6px",
+                        "padding-right": "6px",
+                        "padding-bottom": "6px",
+                        "padding-left": "6px",
+                        "text-align": "left"
+                      },
+                      "children": [
+                        {
+                          "type": "text",
+                          "text": "Service A"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "element",
+                      "tag": "td",
+                      "attrs": {},
+                      "styles": {
+                        "border-width": "1px",
+                        "border-color": "#aaa",
+                        "padding-top": "6px",
+                        "padding-right": "6px",
+                        "padding-bottom": "6px",
+                        "padding-left": "6px",
+                        "text-align": "left"
+                      },
+                      "children": [
+                        {
+                          "type": "text",
+                          "text": "1"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "element",
+                      "tag": "td",
+                      "attrs": {},
+                      "styles": {
+                        "border-width": "1px",
+                        "border-color": "#aaa",
+                        "padding-top": "6px",
+                        "padding-right": "6px",
+                        "padding-bottom": "6px",
+                        "padding-left": "6px",
+                        "text-align": "left"
+                      },
+                      "children": [
+                        {
+                          "type": "text",
+                          "text": "$200"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "element",
+                      "tag": "td",
+                      "attrs": {},
+                      "styles": {
+                        "border-width": "1px",
+                        "border-color": "#aaa",
+                        "padding-top": "6px",
+                        "padding-right": "6px",
+                        "padding-bottom": "6px",
+                        "padding-left": "6px",
+                        "text-align": "left"
+                      },
+                      "children": [
+                        {
+                          "type": "text",
+                          "text": "$200"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "element",
+                  "tag": "tr",
+                  "attrs": {},
+                  "styles": {},
+                  "children": [
+                    {
+                      "type": "element",
+                      "tag": "td",
+                      "attrs": {},
+                      "styles": {
+                        "border-width": "1px",
+                        "border-color": "#aaa",
+                        "padding-top": "6px",
+                        "padding-right": "6px",
+                        "padding-bottom": "6px",
+                        "padding-left": "6px",
+                        "text-align": "left"
+                      },
+                      "children": [
+                        {
+                          "type": "text",
+                          "text": "Service B"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "element",
+                      "tag": "td",
+                      "attrs": {},
+                      "styles": {
+                        "border-width": "1px",
+                        "border-color": "#aaa",
+                        "padding-top": "6px",
+                        "padding-right": "6px",
+                        "padding-bottom": "6px",
+                        "padding-left": "6px",
+                        "text-align": "left"
+                      },
+                      "children": [
+                        {
+                          "type": "text",
+                          "text": "2"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "element",
+                      "tag": "td",
+                      "attrs": {},
+                      "styles": {
+                        "border-width": "1px",
+                        "border-color": "#aaa",
+                        "padding-top": "6px",
+                        "padding-right": "6px",
+                        "padding-bottom": "6px",
+                        "padding-left": "6px",
+                        "text-align": "left"
+                      },
+                      "children": [
+                        {
+                          "type": "text",
+                          "text": "$50"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "element",
+                      "tag": "td",
+                      "attrs": {},
+                      "styles": {
+                        "border-width": "1px",
+                        "border-color": "#aaa",
+                        "padding-top": "6px",
+                        "padding-right": "6px",
+                        "padding-bottom": "6px",
+                        "padding-left": "6px",
+                        "text-align": "left"
+                      },
+                      "children": [
+                        {
+                          "type": "text",
+                          "text": "$100"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "element",
+      "tag": "div",
+      "attrs": {
+        "class": "section"
+      },
+      "styles": {
+        "color": "#333",
+        "font-family": "Arial, sans-serif",
+        "font-size": "14px",
+        "margin-bottom": "20px"
+      },
+      "children": [
+        {
+          "type": "element",
+          "tag": "div",
+          "attrs": {
+            "class": "section-title"
+          },
+          "styles": {
+            "color": "#222",
+            "font-family": "Arial, sans-serif",
+            "font-size": "18px",
+            "font-weight": "bold",
+            "margin-bottom": "8px"
+          },
+          "children": [
+            {
+              "type": "text",
+              "text": "Payment Summary"
+            }
+          ]
+        },
+        {
+          "type": "element",
+          "tag": "table",
+          "attrs": {
+            "class": "totals"
+          },
+          "styles": {
+            "width": "100%",
+            "border-collapse-color": "collapse",
+            "margin-top": "10px"
+          },
+          "children": [
+            {
+              "type": "element",
+              "tag": "tbody",
+              "attrs": {},
+              "styles": {},
+              "children": [
+                {
+                  "type": "element",
+                  "tag": "tr",
+                  "attrs": {},
+                  "styles": {},
+                  "children": [
+                    {
+                      "type": "element",
+                      "tag": "td",
+                      "attrs": {
+                        "class": "label"
+                      },
+                      "styles": {
+                        "border-width": "1px",
+                        "border-color": "none",
+                        "padding-top": "4px",
+                        "padding-right": "0",
+                        "padding-bottom": "4px",
+                        "padding-left": "0",
+                        "text-align": "right",
+                        "font-weight": "bold",
+                        "width": "80%"
+                      },
+                      "children": [
+                        {
+                          "type": "text",
+                          "text": "Subtotal:"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "element",
+                      "tag": "td",
+                      "attrs": {
+                        "class": "value"
+                      },
+                      "styles": {
+                        "border-width": "1px",
+                        "border-color": "none",
+                        "padding-top": "4px",
+                        "padding-right": "0",
+                        "padding-bottom": "4px",
+                        "padding-left": "0",
+                        "text-align": "right",
+                        "width": "20%"
+                      },
+                      "children": [
+                        {
+                          "type": "text",
+                          "text": "$300"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "element",
+                  "tag": "tr",
+                  "attrs": {},
+                  "styles": {},
+                  "children": [
+                    {
+                      "type": "element",
+                      "tag": "td",
+                      "attrs": {
+                        "class": "label"
+                      },
+                      "styles": {
+                        "border-width": "1px",
+                        "border-color": "none",
+                        "padding-top": "4px",
+                        "padding-right": "0",
+                        "padding-bottom": "4px",
+                        "padding-left": "0",
+                        "text-align": "right",
+                        "font-weight": "bold",
+                        "width": "80%"
+                      },
+                      "children": [
+                        {
+                          "type": "text",
+                          "text": "Deposit Paid:"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "element",
+                      "tag": "td",
+                      "attrs": {
+                        "class": "value"
+                      },
+                      "styles": {
+                        "border-width": "1px",
+                        "border-color": "none",
+                        "padding-top": "4px",
+                        "padding-right": "0",
+                        "padding-bottom": "4px",
+                        "padding-left": "0",
+                        "text-align": "right",
+                        "width": "20%"
+                      },
+                      "children": [
+                        {
+                          "type": "text",
+                          "text": "-$50"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "element",
+                  "tag": "tr",
+                  "attrs": {},
+                  "styles": {},
+                  "children": [
+                    {
+                      "type": "element",
+                      "tag": "td",
+                      "attrs": {
+                        "class": "label"
+                      },
+                      "styles": {
+                        "border-width": "1px",
+                        "border-color": "none",
+                        "padding-top": "4px",
+                        "padding-right": "0",
+                        "padding-bottom": "4px",
+                        "padding-left": "0",
+                        "text-align": "right",
+                        "font-weight": "bold",
+                        "width": "80%"
+                      },
+                      "children": [
+                        {
+                          "type": "text",
+                          "text": "Stripe Fee (3.9%):"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "element",
+                      "tag": "td",
+                      "attrs": {
+                        "class": "value"
+                      },
+                      "styles": {
+                        "border-width": "1px",
+                        "border-color": "none",
+                        "padding-top": "4px",
+                        "padding-right": "0",
+                        "padding-bottom": "4px",
+                        "padding-left": "0",
+                        "text-align": "right",
+                        "width": "20%"
+                      },
+                      "children": [
+                        {
+                          "type": "text",
+                          "text": "$9.75"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "element",
+                  "tag": "tr",
+                  "attrs": {},
+                  "styles": {},
+                  "children": [
+                    {
+                      "type": "element",
+                      "tag": "td",
+                      "attrs": {
+                        "class": "label"
+                      },
+                      "styles": {
+                        "border-width": "1px",
+                        "border-color": "none",
+                        "padding-top": "4px",
+                        "padding-right": "0",
+                        "padding-bottom": "4px",
+                        "padding-left": "0",
+                        "text-align": "right",
+                        "font-weight": "bold",
+                        "width": "80%"
+                      },
+                      "children": [
+                        {
+                          "type": "element",
+                          "tag": "strong",
+                          "attrs": {},
+                          "styles": {
+                            "font-weight": "bold",
+                            "text-align": "right"
+                          },
+                          "children": [
+                            {
+                              "type": "text",
+                              "text": "Total Due:"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "element",
+                      "tag": "td",
+                      "attrs": {
+                        "class": "value"
+                      },
+                      "styles": {
+                        "border-width": "1px",
+                        "border-color": "none",
+                        "padding-top": "4px",
+                        "padding-right": "0",
+                        "padding-bottom": "4px",
+                        "padding-left": "0",
+                        "text-align": "right",
+                        "width": "20%"
+                      },
+                      "children": [
+                        {
+                          "type": "element",
+                          "tag": "strong",
+                          "attrs": {},
+                          "styles": {
+                            "text-align": "right"
+                          },
+                          "children": [
+                            {
+                              "type": "text",
+                              "text": "$259.75"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "element",
+      "tag": "div",
+      "attrs": {
+        "class": "footer"
+      },
+      "styles": {
+        "color": "#666",
+        "font-family": "Arial, sans-serif",
+        "font-size": "13px",
+        "text-align": "center",
+        "margin-top": "30px"
+      },
+      "children": [
+        {
+          "type": "text",
+          "text": "2026 © Your Company Name"
+        }
+      ]
+    }
+  ]
+}

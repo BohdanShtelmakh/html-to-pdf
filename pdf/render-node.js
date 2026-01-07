@@ -140,12 +140,14 @@ async function renderNode(node, ctx) {
 
   if (['h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(tag)) {
     const size = styleNumber(styles, 'font-size', defaultFontSizeFor(tag));
+
     const gap = lineGapFor(size, styles, tag);
     const text = gatherPlainText(node);
-    const borderBottom = styles['border-bottom'] ? parsePx(styles['border-bottom'].split(' ')[0], 0) : 0;
-    const borderBottomColor = styles['border-bottom']
-      ? styleColor(styles, 'border-bottom-color', styles['border-bottom'].split(' ').slice(-1)[0])
+    const borderBottom = styles['border-bottom-width'] ? parsePx(styles['border-bottom-width'].split(' ')[0], 0) : 0;
+    const borderBottomColor = styles['border-bottom-color']
+      ? styleColor(styles, 'border-bottom-color', styles['border-bottom-color'])
       : '#333333';
+
     selectFontForInline(doc, styles, true, false, size);
     const h = doc.heightOfString(text, {
       width: layout.contentWidth(),

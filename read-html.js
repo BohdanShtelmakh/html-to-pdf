@@ -1,7 +1,8 @@
-
 const { JSDOM } = require('jsdom');
 const axios = require('axios');
 const css = require('css');
+const fs = require('fs');
+const path = require('path');
 
 /** ---------- Utilities ---------- **/
 
@@ -18,9 +19,7 @@ function calcSpecificity(selector) {
   let a = 0,
     b = 0,
     c = 0;
-  const s = selector
-    .replace(/:not\((.*?)\)/g, '$1')
-    .replace(/\s+/g, ' ');
+  const s = selector.replace(/:not\((.*?)\)/g, '$1').replace(/\s+/g, ' ');
 
   a += (s.match(/#[A-Za-z0-9\-_]+/g) || []).length;
 
@@ -47,17 +46,19 @@ function compareSpec(a, b) {
   return 0;
 }
 
-/** Parse inline style string -> {prop: value} */
+/** Parse inline style string -> array of {property, value, important} */
 function parseInlineStyle(styleString) {
-  const out = {};
+  const out = [];
   if (!styleString) return out;
   styleString.split(';').forEach((decl) => {
     const [prop, ...rest] = decl.split(':');
     if (!prop || rest.length === 0) return;
-    const value = rest.join(':');
+    let value = rest.join(':').trim();
+    if (!value) return;
+    const important = /\s*!important\s*$/i.test(value);
+    value = value.replace(/\s*!important\s*$/i, '').trim();
     const p = prop.trim().toLowerCase();
-    const v = value.trim();
-    if (p) out[p] = v;
+    if (p) out.push({ property: p, value, important });
   });
   return out;
 }
@@ -73,6 +74,10 @@ const INHERITABLE = new Set([
   'font-weight',
   'letter-spacing',
   'line-height',
+  'text-decoration',
+  'text-decoration-line',
+  'text-decoration-color',
+  'text-decoration-style',
   'text-align',
   'text-indent',
   'text-transform',
@@ -80,6 +85,77 @@ const INHERITABLE = new Set([
   'word-spacing',
   'direction',
 ]);
+
+// Expand a shorthand declaration into longhand declarations where possible.
+function expandShorthand(decl) {
+  const { property, value, important } = decl;
+  const out = [];
+  const push = (propName, val) => out.push({ property: propName, value: val, important });
+  if (!property) return [decl];
+  const parts = String(value || '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+
+  if (property === 'margin' || property === 'padding') {
+    const [v1, v2, v3, v4] = parts;
+    const top = v1;
+    const right = parts.length === 1 ? v1 : v2;
+    const bottom = parts.length === 1 ? v1 : parts.length === 2 ? v1 : v3;
+    const left = parts.length === 4 ? v4 : right;
+    push(`${property}-top`, top);
+    push(`${property}-right`, right);
+    push(`${property}-bottom`, bottom);
+    push(`${property}-left`, left);
+    return out;
+  }
+
+  if (property === 'border' || property.startsWith('border-')) {
+    const width = parts.find((p) => /^-?\d/.test(p));
+    const color = [...parts].reverse().find((p) => /^#/.test(p) || /^rgb/i.test(p) || /^[a-zA-Z]+$/.test(p));
+    const side = property === 'border' ? '' : property.replace('border-', '') + '-';
+    if (width) push(`border-${side}width`, width);
+    if (color) push(`border-${side}color`, color);
+    return out.length ? out : [decl];
+  }
+
+  if (property === 'background') {
+    const color = [...parts].reverse().find((p) => /^#/.test(p) || /^rgb/i.test(p) || /^[a-zA-Z]+$/.test(p));
+    if (color) push('background-color', color);
+    return out.length ? out : [decl];
+  }
+
+  if (property === 'font') {
+    const tokens = parts;
+    let sizeIndex = tokens.findIndex((t) => /\d/.test(t));
+    let fontSize = null;
+    let lineHeight = null;
+    if (sizeIndex >= 0) {
+      const sizeToken = tokens[sizeIndex];
+      if (sizeToken.includes('/')) {
+        const [sz, lh] = sizeToken.split('/');
+        fontSize = sz;
+        lineHeight = lh;
+      } else {
+        fontSize = sizeToken;
+        const next = tokens[sizeIndex + 1];
+        if (next && next.startsWith('/')) lineHeight = next.slice(1);
+      }
+    }
+    const family = sizeIndex >= 0 ? tokens.slice(sizeIndex + 1).join(' ') : null;
+    const pre = sizeIndex >= 0 ? tokens.slice(0, sizeIndex) : tokens;
+    const fontStyle = pre.find((t) => ['italic', 'oblique'].includes(t.toLowerCase()));
+    const fontWeight = pre.find((t) => ['bold', 'bolder', 'lighter'].includes(t.toLowerCase()) || /^[0-9]{3}$/.test(t));
+    if (fontStyle) push('font-style', fontStyle);
+    if (fontWeight) push('font-weight', fontWeight);
+    if (fontSize) push('font-size', fontSize);
+    if (lineHeight) push('line-height', lineHeight);
+    if (family) push('font-family', family);
+    return out.length ? out : [decl];
+  }
+
+  return [decl];
+}
 
 /** ---------- CSS Collection ---------- **/
 
@@ -98,12 +174,17 @@ async function collectCssRules(doc, { fetchExternal = true } = {}) {
     for (const rule of parsed.stylesheet.rules || []) {
       if (rule.type !== 'rule') continue;
       for (const sel of rule.selectors || []) {
+        const decls = [];
+        (rule.declarations || [])
+          .filter((d) => d.type === 'declaration')
+          .forEach((d) => {
+            const expanded = expandShorthand({ property: d.property, value: d.value, important: !!d.important });
+            expanded.forEach((ex) => decls.push(ex));
+          });
         rules.push({
           selector: sel,
           specificity: calcSpecificity(sel),
-          declarations: (rule.declarations || [])
-            .filter((d) => d.type === 'declaration')
-            .map((d) => ({ property: d.property, value: d.value })),
+          declarations: decls,
           order: order++,
         });
       }
@@ -116,34 +197,183 @@ async function collectCssRules(doc, { fetchExternal = true } = {}) {
       const href = link.getAttribute('href');
       if (!href) continue;
       try {
-        const res = await axios.get(href, { responseType: 'text' });
-        const parsed = css.parse(res.data || '', { silent: true });
+        let cssText = '';
+        if (/^https?:\/\//i.test(href)) {
+          const res = await axios.get(href, { responseType: 'text' });
+          cssText = res.data || '';
+        } else {
+          const localPath = path.isAbsolute(href) ? href : path.resolve(process.cwd(), href);
+          cssText = fs.readFileSync(localPath, 'utf8');
+        }
+        const parsed = css.parse(cssText || '', { silent: true });
         for (const rule of parsed.stylesheet.rules || []) {
           if (rule.type !== 'rule') continue;
           for (const sel of rule.selectors || []) {
+            const decls = [];
+            (rule.declarations || [])
+              .filter((d) => d.type === 'declaration')
+              .forEach((d) => {
+                const expanded = expandShorthand({ property: d.property, value: d.value, important: !!d.important });
+                expanded.forEach((ex) => decls.push(ex));
+              });
             rules.push({
               selector: sel,
               specificity: calcSpecificity(sel),
-              declarations: (rule.declarations || [])
-                .filter((d) => d.type === 'declaration')
-                .map((d) => ({ property: d.property, value: d.value })),
+              declarations: decls,
               order: order++,
             });
           }
         }
-      } catch {
-      }
+      } catch {}
     }
   }
 
   return rules;
 }
 
+const NON_INHERITING_ELEMENTS = [
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  'p',
+  'button',
+  'input',
+  'select',
+  'textarea',
+  'label',
+  'option',
+  'optgroup',
+  'table',
+  'thead',
+  'tbody',
+  'tfoot',
+  'tr',
+  'th',
+  'td',
+  'ul',
+  'ol',
+  'li',
+  'img',
+  'video',
+  'canvas',
+  'iframe',
+  'svg',
+  'math',
+  'pre',
+];
+
+const NON_INHERITED_STYLES = [
+  // Box model
+  'width',
+  'height',
+  'padding',
+  'margin',
+  'border',
+  'border-width',
+  'border-style',
+  'border-color',
+  'border-radius',
+  'box-sizing',
+
+  // Layout
+  'display',
+  'position',
+  'top',
+  'right',
+  'bottom',
+  'left',
+  'z-index',
+  'float',
+  'clear',
+  'overflow',
+  'overflow-x',
+  'overflow-y',
+
+  // Background
+  'background',
+  'background-color',
+  'background-image',
+  'background-repeat',
+  'background-position',
+  'background-size',
+
+  // Flexbox
+  'flex',
+  'flex-direction',
+  'flex-wrap',
+  'flex-grow',
+  'flex-shrink',
+  'justify-content',
+  'align-items',
+  'align-content',
+  'order',
+
+  // Grid
+  'grid',
+  'grid-template-columns',
+  'grid-template-rows',
+  'grid-template-areas',
+  'gap',
+  'row-gap',
+  'column-gap',
+
+  // Effects / Visuals
+  'opacity',
+  'transform',
+  'transform-origin',
+  'filter',
+  'backdrop-filter',
+  'transition',
+  'animation',
+
+  // Tables
+  'border-collapse',
+  'table-layout',
+  'caption-side',
+  'empty-cells',
+  'vertical-align',
+
+  // Lists
+  'list-style',
+  'list-style-type',
+  'list-style-position',
+  'list-style-image',
+
+  // Others
+  'cursor',
+  'pointer-events',
+  'white-space',
+  'content',
+  'outline',
+  'clip',
+  'clip-path',
+];
+function getDeclarationBySelector(rules, selector, property) {
+  return rules
+    .filter((rule) => selector.matches(rule.selector))
+    .flatMap((rule) => rule.declarations)
+    .find((decl) => decl.property === property)?.value;
+}
+
 /** Merge styles for an element: CSS rules (by specificity & order) + inline style (highest) + inherited */
 function computeStylesForElement(el, rules, parentStyles = {}) {
   const styles = {};
+
+  // Inherit only when allowed for this element and property or when explicitly set to inherit.
+  const tagName = el.tagName.toLowerCase();
   for (const prop of INHERITABLE) {
-    if (parentStyles[prop] != null) styles[prop] = parentStyles[prop];
+    const parentVal = parentStyles[prop];
+
+    const allowInherit =
+      parentVal != null && !NON_INHERITED_STYLES.includes(prop) && !NON_INHERITING_ELEMENTS.includes(tagName);
+    if (getDeclarationBySelector(rules, el, prop) === 'inherit' && parentVal != null) {
+      styles[prop] = parentVal;
+    } else if (allowInherit) {
+      styles[prop] = parentVal;
+    }
   }
 
   const best = {};
@@ -153,16 +383,20 @@ function computeStylesForElement(el, rules, parentStyles = {}) {
     } catch {
       continue;
     }
-    for (const { property, value } of r.declarations) {
+    for (const { property, value, important } of r.declarations) {
       if (!property) continue;
       const key = property.toLowerCase();
       const prev = best[key];
       if (!prev) {
-        best[key] = { spec: r.specificity, order: r.order, value };
+        best[key] = { spec: r.specificity, order: r.order, value, important: !!important };
       } else {
+        if (!!important !== !!prev.important) {
+          if (important) best[key] = { spec: r.specificity, order: r.order, value, important: !!important };
+          continue;
+        }
         const cmp = compareSpec(prev.spec, r.specificity);
         if (cmp < 0 || (cmp === 0 && prev.order <= r.order)) {
-          best[key] = { spec: r.specificity, order: r.order, value };
+          best[key] = { spec: r.specificity, order: r.order, value, important: !!important };
         }
       }
     }
@@ -170,7 +404,22 @@ function computeStylesForElement(el, rules, parentStyles = {}) {
   for (const [prop, meta] of Object.entries(best)) styles[prop] = meta.value;
 
   const inline = parseInlineStyle(el.getAttribute && el.getAttribute('style'));
-  for (const [k, v] of Object.entries(inline)) styles[k.toLowerCase()] = v;
+  inline.forEach((decl) => {
+    const expanded = expandShorthand(decl);
+    expanded.forEach(({ property, value }) => {
+      styles[property.toLowerCase()] = value;
+    });
+  });
+
+  // Resolve explicit inherit values after all sources have been merged.
+  for (const [prop, val] of Object.entries(styles)) {
+    if (val !== 'inherit') continue;
+    const canInherit =
+      (!NON_INHERITED_STYLES.includes(prop) && !NON_INHERITING_ELEMENTS.includes((el.tagName || '').toLowerCase())) ||
+      val === 'inherit';
+    if (canInherit && parentStyles[prop] != null) styles[prop] = parentStyles[prop];
+    else delete styles[prop];
+  }
 
   return styles;
 }
@@ -196,6 +445,7 @@ function buildObjectTree(node, rules, parentStyles = {}) {
 
   if (node.nodeType === node.ELEMENT_NODE) {
     const tag = node.tagName.toLowerCase();
+    if (tag === 'script' || tag === 'style') return null;
     const attrs = attrsToObject(node.attributes);
     const styles = computeStylesForElement(node, rules, parentStyles);
 
@@ -227,7 +477,19 @@ function buildObjectTree(node, rules, parentStyles = {}) {
  *   - rootSelector: string | null — if provided, start from this element (e.g., 'body' or '#app')
  */
 async function parseHtmlToObject(html, { fetchExternalCss = true, rootSelector = 'body' } = {}) {
-  const dom = new JSDOM(html);
+  const dom = new JSDOM(html, {
+    runScripts: 'dangerously',
+    resources: 'usable',
+    pretendToBeVisual: true,
+  });
+
+  await new Promise((resolve, reject) => {
+    dom.window.addEventListener('load', resolve);
+    dom.window.addEventListener('error', reject);
+  });
+
+  await new Promise((r) => setTimeout(r, 50));
+
   const { document } = dom.window;
 
   const rules = await collectCssRules(document, { fetchExternal: fetchExternalCss });

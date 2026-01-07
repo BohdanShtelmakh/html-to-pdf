@@ -19,6 +19,8 @@ async function main() {
     fetchExternalCss: false,
     rootSelector: 'body',
   });
+  fs.writeFileSync('parsed-tree.json', JSON.stringify(tree, null, 2), 'utf8');
+
   await makePdf(tree, path.resolve(process.cwd(), manualOutput));
   console.timeEnd('PDF Generation Time');
 
