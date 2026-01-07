@@ -3,6 +3,7 @@ const axios = require('axios');
 const css = require('css');
 const fs = require('fs');
 const path = require('path');
+const { BASE_PT, parsePxWithOptions } = require('./pdf/style');
 
 /** ---------- Utilities ---------- **/
 
@@ -231,39 +232,32 @@ async function collectCssRules(doc, { fetchExternal = true } = {}) {
   return rules;
 }
 
-const NON_INHERITING_ELEMENTS = [
-  'h1',
-  'h2',
-  'h3',
-  'h4',
-  'h5',
-  'h6',
-  'p',
-  'button',
-  'input',
-  'select',
-  'textarea',
-  'label',
-  'option',
-  'optgroup',
-  'table',
-  'thead',
-  'tbody',
-  'tfoot',
-  'tr',
-  'th',
-  'td',
-  'ul',
-  'ol',
-  'li',
-  'img',
-  'video',
-  'canvas',
-  'iframe',
-  'svg',
-  'math',
-  'pre',
-];
+function isHeadingTag(tagName) {
+  return /^h[1-6]$/.test(tagName);
+}
+
+const HEADING_SCALE = {
+  h1: 2,
+  h2: 1.5,
+  h3: 1.17,
+  h4: 1,
+  h5: 0.83,
+  h6: 0.75,
+};
+
+function hasExplicitFontSize(el, rules) {
+  const inline = parseInlineStyle(el.getAttribute && el.getAttribute('style'));
+  if (inline.some((decl) => decl.property === 'font-size')) return true;
+
+  return rules.some((rule) => {
+    try {
+      if (!el.matches || !el.matches(rule.selector)) return false;
+    } catch {
+      return false;
+    }
+    return (rule.declarations || []).some((decl) => decl.property === 'font-size');
+  });
+}
 
 const NON_INHERITED_STYLES = [
   // Box model
@@ -368,7 +362,7 @@ function computeStylesForElement(el, rules, parentStyles = {}) {
     const parentVal = parentStyles[prop];
 
     const allowInherit =
-      parentVal != null && !NON_INHERITED_STYLES.includes(prop) && !NON_INHERITING_ELEMENTS.includes(tagName);
+      parentVal != null && !NON_INHERITED_STYLES.includes(prop) && !(isHeadingTag(tagName) && prop === 'font-size');
     if (getDeclarationBySelector(rules, el, prop) === 'inherit' && parentVal != null) {
       styles[prop] = parentVal;
     } else if (allowInherit) {
@@ -414,11 +408,23 @@ function computeStylesForElement(el, rules, parentStyles = {}) {
   // Resolve explicit inherit values after all sources have been merged.
   for (const [prop, val] of Object.entries(styles)) {
     if (val !== 'inherit') continue;
+    const tagLower = (el.tagName || '').toLowerCase();
     const canInherit =
-      (!NON_INHERITED_STYLES.includes(prop) && !NON_INHERITING_ELEMENTS.includes((el.tagName || '').toLowerCase())) ||
-      val === 'inherit';
+      (!NON_INHERITED_STYLES.includes(prop) && !(isHeadingTag(tagLower) && prop === 'font-size')) || val === 'inherit';
     if (canInherit && parentStyles[prop] != null) styles[prop] = parentStyles[prop];
     else delete styles[prop];
+  }
+
+  const parentFontSize = parsePxWithOptions(parentStyles['font-size'], BASE_PT);
+  const baseFontSize = Number.isFinite(parentFontSize) ? parentFontSize : BASE_PT;
+  const fontSizeValue =
+    styles['font-size'] != null
+      ? parsePxWithOptions(styles['font-size'], baseFontSize, { base: baseFontSize, percentBase: baseFontSize })
+      : baseFontSize;
+  if (isHeadingTag(tagName) && !hasExplicitFontSize(el, rules)) {
+    styles['font-size'] = fontSizeValue * (HEADING_SCALE[tagName] || 1);
+  } else {
+    styles['font-size'] = fontSizeValue;
   }
 
   return styles;

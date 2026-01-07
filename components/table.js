@@ -86,15 +86,12 @@ async function renderTable(node, ctx, tableStyles = {}) {
     }
   }
 
-  let totalPreferred = colWidths.reduce((a, b) => a + b, 0);
+  const totalPreferred = colWidths.reduce((a, b) => a + b, 0);
   if (totalPreferred <= 0) {
     for (let i = 0; i < cols; i++) colWidths[i] = contentWidth / cols;
-  } else if (totalPreferred > contentWidth) {
+  } else {
     const scale = contentWidth / totalPreferred;
     for (let i = 0; i < cols; i++) colWidths[i] *= scale;
-  } else {
-    const extra = contentWidth - totalPreferred;
-    for (let i = 0; i < cols; i++) colWidths[i] += extra / cols;
   }
 
   for (const row of rows) {
@@ -135,7 +132,13 @@ async function renderTable(node, ctx, tableStyles = {}) {
         doc.save().rect(x, y, spanWidth, rowHeight).fill(bg).restore();
       }
       if (borderWidth > 0) {
-        doc.save().lineWidth(borderWidth).strokeColor(borderColor || '#000').rect(x, y, spanWidth, rowHeight).stroke().restore();
+        doc
+          .save()
+          .lineWidth(borderWidth)
+          .strokeColor(borderColor || '#000')
+          .rect(x, y, spanWidth, rowHeight)
+          .stroke()
+          .restore();
       }
 
       const isHeader = cell.tag === 'th';
