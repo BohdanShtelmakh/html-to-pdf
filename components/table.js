@@ -1,17 +1,53 @@
 const { styleNumber, styleColor, textAlign, lineHeightValue } = require('../pdf/style');
 const { inlineRuns, selectFontForInline, gatherPlainText } = require('../pdf/text');
 
+function normalizePaint(val) {
+  if (!val) return null;
+  const s = String(val).trim().toLowerCase();
+  if (s === 'none' || s === 'transparent') return null;
+  return val;
+}
+
+function resolveBackground(cellStyles, rowStyles, tableStyles) {
+  const cellBg = normalizePaint(styleColor(cellStyles || {}, 'background-color', null));
+  if (cellBg) return cellBg;
+  const rowBg = normalizePaint(styleColor(rowStyles || {}, 'background-color', null));
+  if (rowBg) return rowBg;
+  return normalizePaint(styleColor(tableStyles || {}, 'background-color', null));
+}
+
+function resolveBorder(cellStyles, rowStyles, tableStyles) {
+  const borderStyle = String(
+    (cellStyles && cellStyles['border-style']) ||
+      (rowStyles && rowStyles['border-style']) ||
+      (tableStyles && tableStyles['border-style']) ||
+      ''
+  )
+    .trim()
+    .toLowerCase();
+  let borderWidth =
+    styleNumber(cellStyles || {}, 'border-width', null) ??
+    styleNumber(rowStyles || {}, 'border-width', null) ??
+    styleNumber(tableStyles || {}, 'border-width', null) ??
+    0;
+  const borderColor =
+    normalizePaint(styleColor(cellStyles || {}, 'border-color', null)) ||
+    normalizePaint(styleColor(rowStyles || {}, 'border-color', null)) ||
+    normalizePaint(styleColor(tableStyles || {}, 'border-color', null));
+
+  if (borderStyle === 'none' || borderStyle === 'hidden' || !borderColor) borderWidth = 0;
+  return { borderWidth, borderColor };
+}
+
 async function renderTable(node, ctx, tableStyles = {}) {
   const { doc, layout } = ctx;
 
   const tbody = (node.children || []).find((c) => c.type === 'element' && c.tag === 'tbody');
   if (!tbody) return;
 
-  // Collect rows
   const rows = (tbody.children || []).filter((r) => r.type === 'element' && r.tag === 'tr');
   if (!rows.length) return;
 
-  // Determine column count from max sum of colspans.
   let cols = 0;
   for (const row of rows) {
     const cells = (row.children || []).filter((c) => c.type === 'element' && (c.tag === 'td' || c.tag === 'th'));
@@ -21,11 +57,8 @@ async function renderTable(node, ctx, tableStyles = {}) {
   cols = cols || 1;
 
   const cellPadding = styleNumber(tableStyles, 'padding', 6);
-  const borderColor = '#000000';
-  const borderWidth = 1;
   const contentWidth = layout.contentWidth();
 
-  // First pass: compute preferred column widths based on text measurements and colspans.
   const colWidths = Array(cols).fill(0);
 
   for (const row of rows) {
@@ -40,10 +73,12 @@ async function renderTable(node, ctx, tableStyles = {}) {
       const lineGap = Math.max(0, lh - fs);
       const padL = styleNumber(cell.styles || {}, 'padding-left', cellPadding);
       const padR = styleNumber(cell.styles || {}, 'padding-right', cellPadding);
+      const explicitWidth = styleNumber(cell.styles || {}, 'width', null, { percentBase: contentWidth });
       const availableWidth = Math.max(10, (contentWidth / cols) * colspan - padL - padR);
       const measured = doc.widthOfString(text, { width: availableWidth });
       const needed = measured + padL + padR;
-      const perCol = needed / colspan;
+      const target = explicitWidth != null ? explicitWidth : needed;
+      const perCol = target / colspan;
       for (let i = 0; i < colspan && colIndex + i < cols; i++) {
         colWidths[colIndex + i] = Math.max(colWidths[colIndex + i], perCol);
       }
@@ -51,7 +86,6 @@ async function renderTable(node, ctx, tableStyles = {}) {
     }
   }
 
-  // Normalize widths to fit content width.
   let totalPreferred = colWidths.reduce((a, b) => a + b, 0);
   if (totalPreferred <= 0) {
     for (let i = 0; i < cols; i++) colWidths[i] = contentWidth / cols;
@@ -64,11 +98,10 @@ async function renderTable(node, ctx, tableStyles = {}) {
   }
 
   for (const row of rows) {
-    // Measure row height (max cell height)
     let rowHeight = 0;
     const cells = (row.children || []).filter((c) => c.type === 'element' && (c.tag === 'td' || c.tag === 'th'));
+    const rowStyles = row.styles || {};
 
-    // Pre-measure
     let measureCol = 0;
     for (const cell of cells) {
       const colspan = parseInt(cell.attrs?.colspan, 10) || 1;
@@ -89,28 +122,33 @@ async function renderTable(node, ctx, tableStyles = {}) {
 
     layout.ensureSpace(rowHeight + 2);
 
-    // Draw cells
     let drawCol = 0;
     for (const cell of cells) {
       const colspan = parseInt(cell.attrs?.colspan, 10) || 1;
       const spanWidth = colWidths.slice(drawCol, drawCol + colspan).reduce((a, b) => a + b, 0);
       const x = layout.x + colWidths.slice(0, drawCol).reduce((a, b) => a + b, 0);
       const y = layout.y;
-      // Border
-      doc.save().lineWidth(borderWidth).strokeColor(borderColor).rect(x, y, spanWidth, rowHeight).stroke().restore();
+      const cellStyles = cell.styles || {};
+      const bg = resolveBackground(cellStyles, rowStyles, tableStyles);
+      const { borderWidth, borderColor } = resolveBorder(cellStyles, rowStyles, tableStyles);
+      if (bg) {
+        doc.save().rect(x, y, spanWidth, rowHeight).fill(bg).restore();
+      }
+      if (borderWidth > 0) {
+        doc.save().lineWidth(borderWidth).strokeColor(borderColor || '#000').rect(x, y, spanWidth, rowHeight).stroke().restore();
+      }
 
       const isHeader = cell.tag === 'th';
       const fs = styleNumber(cell.styles || {}, 'font-size', isHeader ? 12.5 : 12);
       const lh = lineHeightValue(cell.styles || {}, fs, cell.tag || 'td');
       const lineGap = Math.max(0, lh - fs);
       const runs = inlineRuns(cell);
-      const align = textAlign(cell.styles || {});
+      const align = textAlign(cellStyles || {});
       const padT = styleNumber(cell.styles || {}, 'padding-top', cellPadding);
       const padB = styleNumber(cell.styles || {}, 'padding-bottom', cellPadding);
       const padL = styleNumber(cell.styles || {}, 'padding-left', cellPadding);
       const padR = styleNumber(cell.styles || {}, 'padding-right', cellPadding);
 
-      // Text
       doc.x = x + padL;
       doc.y = y + padT;
       for (const run of runs) {

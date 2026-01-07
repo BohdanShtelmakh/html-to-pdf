@@ -20,13 +20,11 @@ async function main() {
     rootSelector: 'body',
   });
   fs.writeFileSync('parsed-tree.json', JSON.stringify(tree, null, 2), 'utf8');
-
   await makePdf(tree, path.resolve(process.cwd(), manualOutput));
   console.timeEnd('PDF Generation Time');
-
-  console.time('PDF Generation Time puppeteer');
-  await generatePDF(input, path.resolve(process.cwd(), browserOutput));
-  console.timeEnd('PDF Generation Time puppeteer');
+  // console.time('PDF Generation Time puppeteer');
+  // await generatePDF(input, path.resolve(process.cwd(), browserOutput));
+  // console.timeEnd('PDF Generation Time puppeteer');
 }
 
 main().catch((err) => {

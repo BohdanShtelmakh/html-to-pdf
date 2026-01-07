@@ -52,7 +52,10 @@ async function renderNode(node, ctx) {
 
   const tag = (node.tag || '').toLowerCase();
   const styles = mergeStyles(node);
-  const { mt, mb } = computedMargins(styles, tag);
+  const computed = computedMargins(styles, tag);
+  const isRoot = node.type === 'root' || tag === 'body';
+  const mt = isRoot ? 0 : computed.mt;
+  const mb = isRoot ? 0 : computed.mb;
   const finishBlock = layout.newBlock(mt, mb);
   const color = styleColor(styles, 'color', '#000');
   const align = textAlign(styles);
@@ -143,10 +146,19 @@ async function renderNode(node, ctx) {
 
     const gap = lineGapFor(size, styles, tag);
     const text = gatherPlainText(node);
-    const borderBottom = styles['border-bottom-width'] ? parsePx(styles['border-bottom-width'].split(' ')[0], 0) : 0;
-    const borderBottomColor = styles['border-bottom-color']
-      ? styleColor(styles, 'border-bottom-color', styles['border-bottom-color'])
-      : '#333333';
+    const padding = styleNumber(styles, 'padding', 0);
+    const paddingTop = styleNumber(styles, 'padding-top', padding);
+    const paddingBottom = styleNumber(styles, 'padding-bottom', padding);
+    const borderBottomStyle = String(styles['border-bottom-style'] || '')
+      .trim()
+      .toLowerCase();
+    const borderBottomWidth = styleNumber(styles, 'border-bottom-width', 0);
+    const borderBottomColor = styleColor(styles, 'border-bottom-color', '#333333');
+    const borderBottomPaint = ['none', 'transparent'].includes(String(borderBottomColor).trim().toLowerCase())
+      ? null
+      : borderBottomColor;
+    const borderBottom =
+      borderBottomStyle === 'none' || borderBottomStyle === 'hidden' || !borderBottomPaint ? 0 : borderBottomWidth;
 
     selectFontForInline(doc, styles, true, false, size);
     const h = doc.heightOfString(text, {
@@ -155,24 +167,24 @@ async function renderNode(node, ctx) {
       lineGap: gap,
     });
 
-    layout.ensureSpace(h + borderBottom);
+    const totalHeight = paddingTop + h + paddingBottom + borderBottom;
+    layout.ensureSpace(totalHeight);
 
     const startY = layout.y;
-    doc.fillColor(color).text(text, layout.x, layout.y, { width: layout.contentWidth(), align, lineGap: gap });
+    const textY = startY + paddingTop;
+
+    doc.fillColor(color).text(text, layout.x, textY, { width: layout.contentWidth(), align, lineGap: gap });
 
     if (borderBottom) {
-      const drawY = startY + h + borderBottom / 2;
+      const drawY = startY + paddingTop + h + paddingBottom;
       doc
         .save()
-        .lineWidth(borderBottom)
-        .strokeColor(borderBottomColor)
-        .moveTo(layout.x, drawY)
-        .lineTo(layout.x + layout.contentWidth(), drawY)
-        .stroke()
+        .rect(layout.x, drawY, layout.contentWidth(), borderBottom)
+        .fill(borderBottomPaint || '#333333')
         .restore();
     }
 
-    layout.y = Math.max(layout.y, startY + h + borderBottom);
+    layout.y = Math.max(layout.y, startY + totalHeight);
     finishBlock();
     return;
   }

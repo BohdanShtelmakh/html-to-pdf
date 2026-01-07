@@ -46,11 +46,11 @@ function defaultMarginsFor(tag) {
   return { mt: d.mt, mb: d.mb };
 }
 
-function parseMarginShorthand(val, fallbackTop, fallbackBottom) {
+function parseMarginShorthand(val, fallbackTop, fallbackBottom, base = BASE_PT) {
   if (!val) return { top: fallbackTop, bottom: fallbackBottom };
   const parts = String(val).trim().split(/\s+/).filter(Boolean);
   if (!parts.length) return { top: fallbackTop, bottom: fallbackBottom };
-  const nums = parts.map((p) => parsePx(p, null)).filter((n) => n != null);
+  const nums = parts.map((p) => parsePxWithOptions(p, null, { base })).filter((n) => n != null);
   if (!nums.length) return { top: fallbackTop, bottom: fallbackBottom };
   if (nums.length === 1) return { top: nums[0], bottom: nums[0] };
   if (nums.length === 2) return { top: nums[0], bottom: nums[0] };
@@ -63,10 +63,20 @@ function defaultLineHeightFor(tag) {
 }
 
 function computedMargins(styles, tag) {
+  const fontSize = styleNumber(styles, 'font-size', defaultFontSizeFor(tag));
+  const scale = fontSize / BASE_PT;
   const d = defaultMarginsFor(tag);
-  const marginFromShorthand = parseMarginShorthand(styles.margin, d.mt, d.mb);
-  const mt = styles['margin-top'] != null ? parsePx(styles['margin-top'], d.mt) : marginFromShorthand.top;
-  const mb = styles['margin-bottom'] != null ? parsePx(styles['margin-bottom'], d.mb) : marginFromShorthand.bottom;
+  const defaultTop = d.mt * scale;
+  const defaultBottom = d.mb * scale;
+  const marginFromShorthand = parseMarginShorthand(styles.margin, defaultTop, defaultBottom, fontSize);
+  const mt =
+    styles['margin-top'] != null
+      ? parsePxWithOptions(styles['margin-top'], defaultTop, { base: fontSize })
+      : marginFromShorthand.top;
+  const mb =
+    styles['margin-bottom'] != null
+      ? parsePxWithOptions(styles['margin-bottom'], defaultBottom, { base: fontSize })
+      : marginFromShorthand.bottom;
   return { mt, mb };
 }
 
