@@ -8,6 +8,7 @@ const {
   styleNumber,
   textAlign,
   lineGapFor,
+  lineHeightValue,
   parsePx,
 } = require('./style');
 const { inlineRuns, selectFontForInline, gatherPlainText } = require('./text');
@@ -28,6 +29,29 @@ const INLINE_TAGS = new Set([
   'code',
   'a',
 ]);
+
+function shouldCollapseWhitespace(styles) {
+  const ws = String(styles['white-space'] || '').trim().toLowerCase();
+  return ws !== 'pre' && ws !== 'pre-wrap';
+}
+
+function normalizeRuns(runs, collapse) {
+  if (!collapse) return runs;
+  const out = [];
+  let prevSpace = false;
+  for (const run of runs) {
+    let text = run.text || '';
+    text = text.replace(/\s+/g, ' ');
+    if (prevSpace) text = text.replace(/^ /, '');
+    if (!text) continue;
+    prevSpace = text.endsWith(' ');
+    out.push({ ...run, text });
+  }
+  if (out.length) {
+    out[out.length - 1].text = out[out.length - 1].text.replace(/ $/, '');
+  }
+  return out;
+}
 
 function isInlineOnly(node) {
   if (!node || !node.children) return false;
@@ -90,14 +114,82 @@ async function renderNode(node, ctx) {
     const paddingBottom = styleNumber(styles, 'padding-bottom', padding);
     const paddingLeft = styleNumber(styles, 'padding-left', padding);
     const paddingRight = styleNumber(styles, 'padding-right', padding);
+    const defaultIndent = parsePx('40px', 0);
+    const marginLeft = styleNumber(styles, 'margin-left', defaultIndent);
+    const marginRight = styleNumber(styles, 'margin-right', defaultIndent);
     const bg = styleColor(styles, 'background-color', null);
-    const borderLeft = styles['border-left'] ? parsePx(styles['border-left'].split(' ')[0], 0) : 0;
-    const borderLeftColor = styles['border-left']
-      ? styleColor(styles, 'border-left-color', styles['border-left'].split(' ').slice(-1)[0])
-      : '#333333';
+    const borderLeftStyle = String(styles['border-left-style'] || styles['border-style'] || '')
+      .trim()
+      .toLowerCase();
+    const borderLeftWidth =
+      styleNumber(styles, 'border-left-width', null) ??
+      (styles['border-left'] ? parsePx(styles['border-left'].split(' ')[0], 0) : 0);
+    const borderLeftColor =
+      styleColor(styles, 'border-left-color', null) ||
+      (styles['border-left'] ? styles['border-left'].split(' ').slice(-1)[0] : '#333333');
+    const borderLeftPaint = ['none', 'transparent'].includes(
+      String(borderLeftColor || '')
+        .trim()
+        .toLowerCase()
+    )
+      ? null
+      : borderLeftColor;
+    const borderLeft =
+      borderLeftStyle === 'none' || borderLeftStyle === 'hidden' || !borderLeftPaint ? 0 : borderLeftWidth;
 
     layout.ensureSpace(paddingTop + paddingBottom);
     const startY = layout.y;
+
+    const inlineOnly = isInlineOnly(node);
+    if (inlineOnly) {
+      const size = styleNumber(styles, 'font-size', BASE_PT);
+      const lineHeight = lineHeightValue(styles, size, tag);
+      const rawGap = lineHeight - size;
+      const gap = Number.isFinite(rawGap) ? rawGap : lineGapFor(size, styles, tag);
+      const runs = normalizeRuns(inlineRuns(node), shouldCollapseWhitespace(styles));
+      const plain = runs.map((r) => r.text).join('');
+      const blockWidth = Math.max(0, layout.contentWidth() - marginLeft - marginRight);
+      const blockX = layout.x + marginLeft;
+      const availableWidth = blockWidth - paddingLeft - paddingRight;
+      selectFontForInline(doc, styles, false, false, size);
+      const textWidth = doc.widthOfString(plain);
+      const isSingleLine = textWidth <= availableWidth && !plain.includes('\n');
+      const h = isSingleLine
+        ? lineHeight
+        : doc.heightOfString(plain, { width: availableWidth, align, lineGap: gap });
+      const boxH = paddingTop + h + paddingBottom;
+      layout.ensureSpace(boxH);
+
+      if (bg && boxH > 0) {
+        doc.save().rect(blockX, startY, blockWidth, boxH).fill(bg).restore();
+      }
+      if (borderLeft && boxH > 0) {
+        doc
+          .save()
+          .rect(blockX, startY, borderLeft, boxH)
+          .fill(borderLeftPaint || '#333333')
+          .restore();
+      }
+
+      doc.fillColor(color);
+      doc.x = blockX + paddingLeft;
+      doc.y = startY + paddingTop;
+      for (const run of runs) {
+        const s = { ...styles, ...(run.styles || {}) };
+        selectFontForInline(doc, s, !!run.bold, !!run.italic);
+        doc.fillColor(styleColor(s, 'color', color)).text(run.text, {
+          width: availableWidth,
+          align,
+          lineGap: gap,
+          continued: true,
+          underline: !!run.underline,
+        });
+      }
+      doc.text('', { continued: false });
+      layout.y = Math.max(layout.y, startY + boxH);
+      finishBlock();
+      return;
+    }
 
     // Apply top padding
     if (paddingTop) layout.y += paddingTop;
@@ -105,8 +197,10 @@ async function renderNode(node, ctx) {
     // Temporarily shrink available width for horizontal padding
     const originalX = layout.x;
     const originalContentWidth = layout.contentWidth;
-    layout.x = layout.x + paddingLeft;
-    layout.contentWidth = () => originalContentWidth() - paddingLeft - paddingRight;
+    const blockX = layout.x + marginLeft;
+    const blockWidth = Math.max(0, originalContentWidth() - marginLeft - marginRight);
+    layout.x = blockX + paddingLeft;
+    layout.contentWidth = () => blockWidth - paddingLeft - paddingRight;
 
     for (const child of node.children || []) {
       /* eslint-disable no-await-in-loop */
@@ -122,17 +216,17 @@ async function renderNode(node, ctx) {
 
     const endY = layout.y;
     const boxH = endY - startY;
-    const w = originalContentWidth();
+    const w = blockWidth;
 
     if ((bg || borderLeft) && boxH > 0) {
       if (bg) {
-        doc.save().rect(originalX, startY, w, boxH).fill(bg).restore();
+        doc.save().rect(blockX, startY, w, boxH).fill(bg).restore();
       }
       if (borderLeft) {
         doc
           .save()
-          .rect(originalX, startY, borderLeft, boxH)
-          .fill(borderLeftColor || '#333333')
+          .rect(blockX, startY, borderLeft, boxH)
+          .fill(borderLeftPaint || '#333333')
           .restore();
       }
     }
@@ -177,6 +271,7 @@ async function renderNode(node, ctx) {
 
     if (borderBottom) {
       const drawY = startY + paddingTop + h + paddingBottom;
+
       doc
         .save()
         .rect(layout.x, drawY, layout.contentWidth(), borderBottom)
