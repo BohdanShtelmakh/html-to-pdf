@@ -2,32 +2,15 @@ const fs = require('fs');
 const path = require('path');
 const { parseHtmlToObject } = require('./read-html');
 const { makePdf } = require('./obj-pdf');
-const { generatePDF } = require('./puppeter-sample');
-
-async function main() {
-  const [input = 'checkout.html', manualOutput = `output_my2.pdf`, browserOutput = 'output_pup.pdf'] =
-    process.argv.slice(2);
-  const absoluteInput = path.resolve(process.cwd(), input);
-  if (!fs.existsSync(absoluteInput)) {
-    throw new Error(`Input HTML not found: ${absoluteInput}`);
-  }
-
-  const html = fs.readFileSync(absoluteInput, 'utf8');
-
-  console.time('PDF Generation Time');
+async function renderPdfFromHtml(html, options = {}) {
   const tree = await parseHtmlToObject(html, {
-    fetchExternalCss: false,
-    rootSelector: 'body',
+    fetchExternalCss: !!options.fetchExternalCss,
+    rootSelector: options.rootSelector || 'body',
   });
-  fs.writeFileSync('parsed-tree.json', JSON.stringify(tree, null, 2), 'utf8');
-  await makePdf(tree, path.resolve(process.cwd(), manualOutput));
-  console.timeEnd('PDF Generation Time');
-  // console.time('PDF Generation Time puppeteer');
-  // await generatePDF(input, path.resolve(process.cwd(), browserOutput));
-  // console.timeEnd('PDF Generation Time puppeteer');
+
+  const outputPath = options.outputPath || path.resolve(process.cwd(), 'output.pdf');
+  const pdfPath = await makePdf(tree, outputPath, { fonts: options.fonts });
+  return fs.readFileSync(pdfPath);
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exitCode = 1;
-});
+module.exports = { renderPdfFromHtml };
