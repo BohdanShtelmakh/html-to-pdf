@@ -21,7 +21,8 @@ async function run() {
     rootSelector: 'body',
     fetchExternalCss: false,
     fonts: {
-      sansRegular: '/path/to/Arial.ttf'
+      sansRegular: '/path/to/Arial.ttf',
+      sansBold: '/path/to/Arial Bold.ttf'
     }
   });
 
@@ -47,16 +48,10 @@ Options:
 
 ## Fonts
 
-You can supply custom font paths via `fonts` in options or by setting environment variables:
+You can supply custom font paths via the `fonts` option:
 
-- `PDF_SANS_REGULAR`
-- `PDF_SANS_BOLD`
-- `PDF_SANS_ITALIC`
-- `PDF_SANS_BOLDITALIC`
-- `PDF_SERIF_REGULAR`
-- `PDF_SERIF_BOLD`
-- `PDF_SERIF_ITALIC`
-- `PDF_SERIF_BOLDITALIC`
+- `sansRegular`, `sansBold`, `sansItalic`, `sansBoldItalic`
+- `serifRegular`, `serifBold`, `serifItalic`, `serifBoldItalic`
 
 ## License
 

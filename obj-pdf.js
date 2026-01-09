@@ -5,14 +5,14 @@ const { renderNode } = require('./pdf/render-node');
 const { parsePxWithOptions } = require('./pdf/style');
 
 function registerFonts(doc, fonts = {}) {
-  const sansRegular = fonts.sansRegular || process.env.PDF_SANS_REGULAR;
-  const sansBold = fonts.sansBold || process.env.PDF_SANS_BOLD;
-  const sansItalic = fonts.sansItalic || process.env.PDF_SANS_ITALIC;
-  const sansBoldItalic = fonts.sansBoldItalic || process.env.PDF_SANS_BOLDITALIC;
-  const serifRegular = fonts.serifRegular || process.env.PDF_SERIF_REGULAR;
-  const serifBold = fonts.serifBold || process.env.PDF_SERIF_BOLD;
-  const serifItalic = fonts.serifItalic || process.env.PDF_SERIF_ITALIC;
-  const serifBoldItalic = fonts.serifBoldItalic || process.env.PDF_SERIF_BOLDITALIC;
+  const sansRegular = fonts.sansRegular;
+  const sansBold = fonts.sansBold;
+  const sansItalic = fonts.sansItalic;
+  const sansBoldItalic = fonts.sansBoldItalic;
+  const serifRegular = fonts.serifRegular;
+  const serifBold = fonts.serifBold;
+  const serifItalic = fonts.serifItalic;
+  const serifBoldItalic = fonts.serifBoldItalic;
 
   const map = { sans: {}, serif: {} };
   let hasSans = false;

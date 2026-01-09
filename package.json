@@ -1,7 +1,18 @@
 {
+  "name": "html-to-pdf",
+  "version": "0.1.0",
+  "main": "index.js",
+  "license": "MIT",
+  "files": [
+    "index.js",
+    "read-html.js",
+    "obj-pdf.js",
+    "pdf/",
+    "components/",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
-    "render": "node index.js",
-    "render:sample": "node index.js sample3.html output_cli.pdf",
     "test": "node -e \"console.log('No automated tests yet')\""
   },
   "dependencies": {
