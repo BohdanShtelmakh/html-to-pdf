@@ -75,6 +75,7 @@ async function renderTable(node, ctx, tableStyles = {}) {
       const padR = styleNumber(cell.styles || {}, 'padding-right', cellPadding);
       const explicitWidth = styleNumber(cell.styles || {}, 'width', null, { percentBase: contentWidth });
       const availableWidth = Math.max(10, (contentWidth / cols) * colspan - padL - padR);
+      selectFontForInline(doc, cell.styles || {}, isHeader, false, fs);
       const measured = doc.widthOfString(text, { width: availableWidth });
       const needed = measured + padL + padR;
       const target = explicitWidth != null ? explicitWidth : needed;
@@ -112,6 +113,7 @@ async function renderTable(node, ctx, tableStyles = {}) {
       const padB = styleNumber(cell.styles || {}, 'padding-bottom', cellPadding);
       const padL = styleNumber(cell.styles || {}, 'padding-left', cellPadding);
       const padR = styleNumber(cell.styles || {}, 'padding-right', cellPadding);
+      selectFontForInline(doc, cell.styles || {}, isHeader, false, fs);
       const h = doc.heightOfString(text, { width: spanWidth - padL - padR, lineGap });
       rowHeight = Math.max(rowHeight, h + padT + padB);
       measureCol += colspan;

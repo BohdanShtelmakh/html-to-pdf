@@ -4,6 +4,11 @@ const css = require('css');
 const fs = require('fs');
 const path = require('path');
 const { BASE_PT, parsePxWithOptions } = require('./pdf/style');
+const vm = require('vm');
+
+if (!vm.constants || !vm.constants.DONT_CONTEXTIFY) {
+  vm.constants = { ...(vm.constants || {}), DONT_CONTEXTIFY: {} };
+}
 
 /** ---------- Utilities ---------- **/
 

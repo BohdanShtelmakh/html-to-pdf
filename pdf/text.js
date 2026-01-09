@@ -13,10 +13,18 @@ function selectFontForInline(doc, styles, strong = false, italic = false, sizeOv
   const wantsSans =
     family.includes('arial') || family.includes('helvetica') || family.includes('sans-serif') || family.includes('sans');
 
+  const custom = doc._fontMap && (wantsSans ? doc._fontMap.sans : doc._fontMap.serif);
   let fontName = wantsSans ? 'Helvetica' : 'Times-Roman';
-  if (isBold && isItalic) fontName = wantsSans ? 'Helvetica-BoldOblique' : 'Times-BoldItalic';
-  else if (isBold) fontName = wantsSans ? 'Helvetica-Bold' : 'Times-Bold';
-  else if (isItalic) fontName = wantsSans ? 'Helvetica-Oblique' : 'Times-Italic';
+  if (custom && custom.regular) {
+    if (isBold && isItalic && custom.boldItalic) fontName = custom.boldItalic;
+    else if (isBold && custom.bold) fontName = custom.bold;
+    else if (isItalic && custom.italic) fontName = custom.italic;
+    else fontName = custom.regular;
+  } else {
+    if (isBold && isItalic) fontName = wantsSans ? 'Helvetica-BoldOblique' : 'Times-BoldItalic';
+    else if (isBold) fontName = wantsSans ? 'Helvetica-Bold' : 'Times-Bold';
+    else if (isItalic) fontName = wantsSans ? 'Helvetica-Oblique' : 'Times-Italic';
+  }
 
   doc.font(fontName).fontSize(size);
 }
