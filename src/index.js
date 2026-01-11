@@ -26,9 +26,11 @@ async function renderPdfFromHtml(html, options = {}) {
     rootSelector: options.rootSelector || 'body',
   });
 
-  const outputPath = options.outputPath || path.resolve(process.cwd(), 'output.pdf');
-  const pdfPath = await makePdf(tree, outputPath, { fonts: options.fonts });
-  return fs.readFileSync(pdfPath);
+  const pdfBuffer = await makePdf(tree, {
+    fonts: options.fonts,
+    outputPath: options.outputPath,
+  });
+  return pdfBuffer;
 }
 
 module.exports = { renderPdfFromHtml };

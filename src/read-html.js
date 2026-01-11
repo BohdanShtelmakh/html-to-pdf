@@ -69,6 +69,80 @@ function parseInlineStyle(styleString) {
   return out;
 }
 
+function splitCssValue(value) {
+  if (!value) return [];
+  const parts = [];
+  let buf = '';
+  let depth = 0;
+  let quote = null;
+  const str = String(value).trim();
+  for (let i = 0; i < str.length; i++) {
+    const ch = str[i];
+    if (quote) {
+      buf += ch;
+      if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      buf += ch;
+      continue;
+    }
+    if (ch === '(') {
+      depth += 1;
+      buf += ch;
+      continue;
+    }
+    if (ch === ')') {
+      depth = Math.max(0, depth - 1);
+      buf += ch;
+      continue;
+    }
+    if (/\s/.test(ch) && depth === 0) {
+      if (buf) {
+        parts.push(buf);
+        buf = '';
+      }
+      continue;
+    }
+    buf += ch;
+  }
+  if (buf) parts.push(buf);
+  return parts;
+}
+
+const NON_COLOR_TOKENS = new Set([
+  'none',
+  'solid',
+  'dashed',
+  'dotted',
+  'double',
+  'hidden',
+  'inset',
+  'outset',
+  'ridge',
+  'groove',
+  'thin',
+  'medium',
+  'thick',
+]);
+
+function isColorToken(token) {
+  if (!token) return false;
+  const lower = token.toLowerCase();
+  if (/^#([0-9a-f]{3,8})$/.test(lower)) return true;
+  if (/^(rgba?|hsla?)\(.+\)$/.test(lower)) return true;
+  if (NON_COLOR_TOKENS.has(lower)) return false;
+  return /^[a-z]+$/.test(lower);
+}
+
+function isBorderWidthToken(token) {
+  if (!token) return false;
+  const lower = token.toLowerCase();
+  if (['thin', 'medium', 'thick'].includes(lower)) return true;
+  return /^-?\d/.test(token);
+}
+
 /** Basic set of inheritable CSS properties (extend as needed for your PDF renderer) */
 const INHERITABLE = new Set([
   'color',
@@ -98,10 +172,7 @@ function expandShorthand(decl) {
   const out = [];
   const push = (propName, val) => out.push({ property: propName, value: val, important });
   if (!property) return [decl];
-  const parts = String(value || '')
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean);
+  const parts = splitCssValue(value);
 
   if (property === 'margin' || property === 'padding') {
     const [v1, v2, v3, v4] = parts;
@@ -117,8 +188,8 @@ function expandShorthand(decl) {
   }
 
   if (property === 'border' || property.startsWith('border-')) {
-    const width = parts.find((p) => /^-?\d/.test(p));
-    const color = [...parts].reverse().find((p) => /^#/.test(p) || /^rgb/i.test(p) || /^[a-zA-Z]+$/.test(p));
+    const width = parts.find((p) => isBorderWidthToken(p));
+    const color = [...parts].reverse().find((p) => isColorToken(p));
     const side = property === 'border' ? '' : property.replace('border-', '') + '-';
     if (width) push(`border-${side}width`, width);
     if (color) push(`border-${side}color`, color);
@@ -126,7 +197,7 @@ function expandShorthand(decl) {
   }
 
   if (property === 'background') {
-    const color = [...parts].reverse().find((p) => /^#/.test(p) || /^rgb/i.test(p) || /^[a-zA-Z]+$/.test(p));
+    const color = [...parts].reverse().find((p) => isColorToken(p));
     if (color) push('background-color', color);
     return out.length ? out : [decl];
   }
@@ -171,6 +242,7 @@ function expandShorthand(decl) {
  */
 async function collectCssRules(doc, { fetchExternal = true } = {}) {
   const rules = [];
+  const page = {};
 
   const styleTags = Array.from(doc.querySelectorAll('style'));
   let order = 0;
@@ -178,6 +250,19 @@ async function collectCssRules(doc, { fetchExternal = true } = {}) {
     const parsed = css.parse(tag.textContent || '', { silent: true });
     if (!parsed || !parsed.stylesheet) continue;
     for (const rule of parsed.stylesheet.rules || []) {
+      if (rule.type === 'page') {
+        const decls = [];
+        (rule.declarations || [])
+          .filter((d) => d.type === 'declaration')
+          .forEach((d) => {
+            const expanded = expandShorthand({ property: d.property, value: d.value, important: !!d.important });
+            expanded.forEach((ex) => decls.push(ex));
+          });
+        decls.forEach((decl) => {
+          page[decl.property] = decl.value;
+        });
+        continue;
+      }
       if (rule.type !== 'rule') continue;
       for (const sel of rule.selectors || []) {
         const decls = [];
@@ -213,6 +298,19 @@ async function collectCssRules(doc, { fetchExternal = true } = {}) {
         }
         const parsed = css.parse(cssText || '', { silent: true });
         for (const rule of parsed.stylesheet.rules || []) {
+          if (rule.type === 'page') {
+            const decls = [];
+            (rule.declarations || [])
+              .filter((d) => d.type === 'declaration')
+              .forEach((d) => {
+                const expanded = expandShorthand({ property: d.property, value: d.value, important: !!d.important });
+                expanded.forEach((ex) => decls.push(ex));
+              });
+            decls.forEach((decl) => {
+              page[decl.property] = decl.value;
+            });
+            continue;
+          }
           if (rule.type !== 'rule') continue;
           for (const sel of rule.selectors || []) {
             const decls = [];
@@ -234,7 +332,7 @@ async function collectCssRules(doc, { fetchExternal = true } = {}) {
     }
   }
 
-  return rules;
+  return { rules, page };
 }
 
 function isHeadingTag(tagName) {
@@ -503,7 +601,7 @@ async function parseHtmlToObject(html, { fetchExternalCss = true, rootSelector =
 
   const { document } = dom.window;
 
-  const rules = await collectCssRules(document, { fetchExternal: fetchExternalCss });
+  const { rules, page } = await collectCssRules(document, { fetchExternal: fetchExternalCss });
 
   const root = rootSelector ? document.querySelector(rootSelector) : document.documentElement;
   if (!root) throw new Error(`Root selector "${rootSelector}" not found`);
@@ -522,6 +620,7 @@ async function parseHtmlToObject(html, { fetchExternalCss = true, rootSelector =
     tag: root.tagName?.toLowerCase?.() || 'root',
     attrs: attrsToObject(root.attributes || []),
     styles: rootStyles,
+    page,
     children: nodes,
   };
 }

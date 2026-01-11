@@ -125,8 +125,44 @@ function parsePxWithOptions(val, fallback = 0, { base = BASE_PT, percentBase = n
 
 function parseColor(val, fallback = '#000000') {
   if (!val || typeof val !== 'string') return fallback;
-  const s = val.trim().toLowerCase();
-  if (s === 'gray' || s === 'grey') return '#808080';
+  let s = val.trim();
+  const lower = s.toLowerCase();
+  if (lower === 'gray' || lower === 'grey') return '#808080';
+
+  const rgbMatch = s.match(/^rgba?\((.*)\)$/i);
+  if (rgbMatch) {
+    let body = rgbMatch[1].trim();
+    let alpha = null;
+    if (body.includes('/')) {
+      const parts = body.split('/');
+      body = parts[0].trim();
+      alpha = parts[1].trim();
+    }
+    const comps = body
+      .split(/[\s,]+/)
+      .map((c) => c.trim())
+      .filter(Boolean);
+    if (comps.length >= 3) {
+      let alphaValue = alpha;
+      if (alphaValue == null && comps.length >= 4) alphaValue = comps[3];
+      const rgb = comps.slice(0, 3).join(',');
+      let alphaOut = null;
+      if (alphaValue != null) {
+        const alphaStr = String(alphaValue).trim();
+        if (alphaStr.endsWith('%')) {
+          const pct = parseFloat(alphaStr);
+          if (Number.isFinite(pct)) alphaOut = String(pct / 100);
+        } else {
+          alphaOut = alphaStr;
+        }
+      }
+      const fn = alphaOut != null ? 'rgba' : 'rgb';
+      const out = alphaOut != null ? `${fn}(${rgb},${alphaOut})` : `${fn}(${rgb})`;
+      return out.toLowerCase();
+    }
+  }
+
+  s = lower;
   return s;
 }
 

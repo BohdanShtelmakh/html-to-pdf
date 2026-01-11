@@ -107,34 +107,63 @@ function parseMarginBox(styles, fallback = 6) {
   return out;
 }
 
-async function makePdf(json, outputPath = 'output.pdf', options = {}) {
+function hasMarginStyles(styles) {
+  if (!styles) return false;
+  return (
+    styles.margin != null ||
+    styles['margin-top'] != null ||
+    styles['margin-right'] != null ||
+    styles['margin-bottom'] != null ||
+    styles['margin-left'] != null
+  );
+}
+
+async function makePdf(json, options = {}) {
   const bodyMargins = parseMarginBox(json?.styles, 8);
+  const pageMargins = hasMarginStyles(json?.page) ? parseMarginBox(json.page, 0) : null;
   const minMargins = {
     top: 6,
     right: 0,
     bottom: 0,
     left: 0,
   }; // keep a small inset even when CSS margins are zero
-
+  const buffers = [];
   const doc = new PDFDocument({
     autoFirstPage: true,
     size: 'A4',
     // Drive page margins from body styles when provided; fall back to small defaults.
     margins: options.margins || {
-      top: Math.max(minMargins.top, bodyMargins.top ?? minMargins.top),
-      right: Math.max(minMargins.right, bodyMargins.right ?? minMargins.right),
-      bottom: Math.max(minMargins.bottom, bodyMargins.bottom ?? minMargins.bottom),
-      left: Math.max(minMargins.left, bodyMargins.left ?? minMargins.left),
+      top: Math.max(minMargins.top, (pageMargins || bodyMargins).top ?? minMargins.top),
+      right: Math.max(minMargins.right, (pageMargins || bodyMargins).right ?? minMargins.right),
+      bottom: Math.max(minMargins.bottom, (pageMargins || bodyMargins).bottom ?? minMargins.bottom),
+      left: Math.max(minMargins.left, (pageMargins || bodyMargins).left ?? minMargins.left),
     },
   });
-  doc.pipe(fs.createWriteStream(outputPath));
+  doc.on('data', (data) => {
+    buffers.push(data);
+  });
+  const outputStream = options.outputPath ? fs.createWriteStream(options.outputPath) : null;
+  if (outputStream) {
+    doc.pipe(outputStream);
+  }
+
   registerFonts(doc, options.fonts || {});
 
   const layout = new Layout(doc, { margins: doc.page.margins });
   await renderNode(json, { doc, layout });
-
+  const docDone = new Promise((resolve, reject) => {
+    doc.on('end', resolve);
+    doc.on('error', reject);
+  });
+  const streamDone = outputStream
+    ? new Promise((resolve, reject) => {
+        outputStream.on('finish', resolve);
+        outputStream.on('error', reject);
+      })
+    : Promise.resolve();
   doc.end();
-  return outputPath;
+  await Promise.all([docDone, streamDone]);
+  return Buffer.concat(buffers);
 }
 
 module.exports = { makePdf };
