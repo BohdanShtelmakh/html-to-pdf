@@ -43,16 +43,13 @@ async function renderImage(node, ctx) {
     return;
   }
 
-  // Try to get intrinsic dimensions to preserve aspect ratio when one side is missing.
   let intrinsicWidth = null;
   let intrinsicHeight = null;
   try {
     const img = doc.openImage(buf);
     intrinsicWidth = img?.width || null;
     intrinsicHeight = img?.height || null;
-  } catch {
-    // ignore; we will fall back to heuristic defaults
-  }
+  } catch {}
 
   const maxW = layout.contentWidth();
   const maxH = Number.isFinite(styleNumber(styles, 'max-height', Infinity))
@@ -71,7 +68,6 @@ async function renderImage(node, ctx) {
       ? intrinsicWidth / intrinsicHeight
       : null;
 
-  // Fill missing dimension based on intrinsic aspect ratio if available.
   if (!width && !height) {
     width = Math.min(intrinsicWidth || 400, maxW);
     height = aspect ? width / aspect : intrinsicHeight ? intrinsicHeight * (width / intrinsicWidth) : width * 0.6;
@@ -81,15 +77,12 @@ async function renderImage(node, ctx) {
     width = height * aspect;
   }
 
-  // Final fallbacks if still missing.
   if (!width) width = Math.min(maxW, 300);
   if (!height) height = aspect ? width / aspect : width * 0.6;
 
-  // Apply min/max constraints.
   width = Math.max(minW, Math.min(width, maxWidthStyle));
   height = Math.max(minH, Math.min(height, maxH));
 
-  // Cap to available content width while preserving ratio.
   const shouldCapToContent = !(widthSpecified && heightSpecified);
   if (shouldCapToContent && width > maxW) {
     const scale = maxW / width;
@@ -97,7 +90,6 @@ async function renderImage(node, ctx) {
     height = height * scale;
   }
 
-  // Convert CSS px-like units to PDF points (72dpi vs 96dpi in CSS).
   const PX_TO_PT = 72 / 96;
   width *= PX_TO_PT;
   height *= PX_TO_PT;
@@ -105,7 +97,6 @@ async function renderImage(node, ctx) {
   const estimatedH = height || (width ? width * 0.5 : 120);
   layout.ensureSpace(estimatedH + 6);
 
-  // Honor text-align style for basic horizontal positioning.
   const align = textAlign(styles);
   let x = layout.x;
   if (align === 'center') x = layout.x + (layout.contentWidth() - width) / 2;

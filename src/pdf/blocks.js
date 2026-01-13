@@ -21,7 +21,6 @@ async function renderList(node, ctx, ordered = false) {
 
     layout.ensureSpace(h);
 
-    // Position at the list cursor for each item
     doc.x = layout.x;
     doc.y = layout.y;
 
@@ -44,10 +43,8 @@ async function renderList(node, ctx, ordered = false) {
 function normalizeCodeText(raw) {
   if (!raw) return '';
   const lines = raw.split(/\r?\n/);
-  // Drop leading/trailing empty/whitespace-only lines.
   while (lines.length && /^\s*$/.test(lines[0])) lines.shift();
   while (lines.length && /^\s*$/.test(lines[lines.length - 1])) lines.pop();
-  // Dedent by common indent of non-empty lines.
   let indent = Infinity;
   for (const l of lines) {
     if (!l.trim()) continue;

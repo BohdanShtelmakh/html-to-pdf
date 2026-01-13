@@ -131,7 +131,6 @@ async function makePdf(json, options = {}) {
   const doc = new PDFDocument({
     autoFirstPage: true,
     size: 'A4',
-    // Drive page margins from body styles when provided; fall back to small defaults.
     margins: options.margins || {
       top: Math.max(minMargins.top, (pageMargins || bodyMargins).top ?? minMargins.top),
       right: Math.max(minMargins.right, (pageMargins || bodyMargins).right ?? minMargins.right),

@@ -419,10 +419,8 @@ async function renderNode(node, ctx) {
       return;
     }
 
-    // Apply top padding
     if (paddingTop) layout.y += paddingTop;
 
-    // Temporarily shrink available width for horizontal padding
     const originalX = layout.x;
     const originalContentWidth = layout.contentWidth;
     const blockX = layout.x + marginLeft;
@@ -431,15 +429,12 @@ async function renderNode(node, ctx) {
     layout.contentWidth = () => blockWidth - paddingLeft - paddingRight;
 
     for (const child of node.children || []) {
-      /* eslint-disable no-await-in-loop */
       await renderNode(child, ctx);
     }
 
-    // Restore layout width/x
     layout.contentWidth = originalContentWidth;
     layout.x = originalX;
 
-    // Apply bottom padding
     if (paddingBottom) layout.cursorToNextLine(paddingBottom);
 
     const endY = layout.y;
@@ -631,12 +626,11 @@ async function renderNode(node, ctx) {
     );
     const radius = styleNumber(styles, 'border-radius', 0);
 
-    // Ensure we have space for the box chrome before drawing content.
     layout.ensureSpace(paddingTop + paddingBottom + borderTop.width + borderBottom.width);
     const startY = layout.y;
 
     if (paddingTop || bg || borderTop.width || borderRight.width || borderBottom.width || borderLeft.width) {
-      layout.y += borderTop.width + paddingTop; // apply top border + padding
+      layout.y += borderTop.width + paddingTop;
     }
 
     const originalX = layout.x;
@@ -666,7 +660,6 @@ async function renderNode(node, ctx) {
           let first = true;
           for (const child of children) {
             if (!first) layout.cursorToNextLine(rowGap);
-            /* eslint-disable no-await-in-loop */
             await renderNode(child, ctx);
             first = false;
           }
@@ -730,13 +723,11 @@ async function renderNode(node, ctx) {
         layout.y = Math.max(layout.y, startYInline + h);
       } else {
         for (const child of node.children || []) {
-          /* eslint-disable no-await-in-loop */
           await renderNode(child, ctx);
         }
       }
     }
 
-    // Restore layout width/x
     layout.contentWidth = originalContentWidth;
     layout.x = originalX;
 
@@ -746,7 +737,7 @@ async function renderNode(node, ctx) {
     }
 
     const endY = layout.y;
-    const boxH = endY - startY + paddingBottom + borderBottom.width; // include bottom padding + border
+    const boxH = endY - startY + paddingBottom + borderBottom.width;
 
     const uniformBorderWidth =
       borderTop.width === borderRight.width &&
@@ -814,7 +805,6 @@ async function renderNode(node, ctx) {
       }
     }
 
-    // Ensure we don't overrun the page when adding bottom padding/border.
     layout.ensureSpace(paddingBottom + borderBottom.width);
     if (paddingBottom || borderBottom.width) layout.cursorToNextLine(paddingBottom + borderBottom.width);
     finishBlock();
@@ -823,7 +813,6 @@ async function renderNode(node, ctx) {
 
   if (node.type === 'root' || tag === 'body') {
     for (const child of node.children || []) {
-      /* eslint-disable no-await-in-loop */
       await renderNode(child, ctx);
     }
     finishBlock();
@@ -831,7 +820,6 @@ async function renderNode(node, ctx) {
   }
 
   for (const child of node.children || []) {
-    /* eslint-disable no-await-in-loop */
     await renderNode(child, ctx);
   }
   finishBlock();

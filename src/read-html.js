@@ -10,9 +10,6 @@ if (!vm.constants || !vm.constants.DONT_CONTEXTIFY) {
   vm.constants = { ...(vm.constants || {}), DONT_CONTEXTIFY: {} };
 }
 
-/** ---------- Utilities ---------- **/
-
-/** Turn DOM NamedNodeMap into plain object */
 function attrsToObject(attrs) {
   const out = {};
   if (!attrs) return out;
@@ -20,7 +17,6 @@ function attrsToObject(attrs) {
   return out;
 }
 
-/** Very small specificity calculator: [a(id), b(class|attr|pseudo-class), c(tag|pseudo-element)] */
 function calcSpecificity(selector) {
   let a = 0,
     b = 0,
@@ -44,7 +40,6 @@ function calcSpecificity(selector) {
   return [a, b, c];
 }
 
-/** Compare two specificity tuples [a,b,c]; if equal, later rule wins by source order */
 function compareSpec(a, b) {
   if (a[0] !== b[0]) return a[0] - b[0];
   if (a[1] !== b[1]) return a[1] - b[1];
@@ -52,7 +47,6 @@ function compareSpec(a, b) {
   return 0;
 }
 
-/** Parse inline style string -> array of {property, value, important} */
 function parseInlineStyle(styleString) {
   const out = [];
   if (!styleString) return out;
@@ -143,7 +137,6 @@ function isBorderWidthToken(token) {
   return /^-?\d/.test(token);
 }
 
-/** Basic set of inheritable CSS properties (extend as needed for your PDF renderer) */
 const INHERITABLE = new Set([
   'color',
   'font',
@@ -166,7 +159,6 @@ const INHERITABLE = new Set([
   'direction',
 ]);
 
-// Expand a shorthand declaration into longhand declarations where possible.
 function expandShorthand(decl) {
   const { property, value, important } = decl;
   const out = [];
@@ -234,12 +226,6 @@ function expandShorthand(decl) {
   return [decl];
 }
 
-/** ---------- CSS Collection ---------- **/
-
-/**
- * Collect CSS rules from <style> tags and (optionally) external stylesheets.
- * Returns an array of { selector, specificity, declarations, order }.
- */
 async function collectCssRules(doc, { fetchExternal = true, externalCssTimeoutMs = 5000 } = {}) {
   const rules = [];
   const page = {};
@@ -363,7 +349,6 @@ function hasExplicitFontSize(el, rules) {
 }
 
 const NON_INHERITED_STYLES = [
-  // Box model
   'width',
   'height',
   'padding',
@@ -375,7 +360,6 @@ const NON_INHERITED_STYLES = [
   'border-radius',
   'box-sizing',
 
-  // Layout
   'display',
   'position',
   'top',
@@ -389,7 +373,6 @@ const NON_INHERITED_STYLES = [
   'overflow-x',
   'overflow-y',
 
-  // Background
   'background',
   'background-color',
   'background-image',
@@ -397,7 +380,6 @@ const NON_INHERITED_STYLES = [
   'background-position',
   'background-size',
 
-  // Flexbox
   'flex',
   'flex-direction',
   'flex-wrap',
@@ -408,7 +390,6 @@ const NON_INHERITED_STYLES = [
   'align-content',
   'order',
 
-  // Grid
   'grid',
   'grid-template-columns',
   'grid-template-rows',
@@ -417,7 +398,6 @@ const NON_INHERITED_STYLES = [
   'row-gap',
   'column-gap',
 
-  // Effects / Visuals
   'opacity',
   'transform',
   'transform-origin',
@@ -426,20 +406,17 @@ const NON_INHERITED_STYLES = [
   'transition',
   'animation',
 
-  // Tables
   'border-collapse',
   'table-layout',
   'caption-side',
   'empty-cells',
   'vertical-align',
 
-  // Lists
   'list-style',
   'list-style-type',
   'list-style-position',
   'list-style-image',
 
-  // Others
   'cursor',
   'pointer-events',
   'white-space',
@@ -455,11 +432,9 @@ function getDeclarationBySelector(rules, selector, property) {
     .find((decl) => decl.property === property)?.value;
 }
 
-/** Merge styles for an element: CSS rules (by specificity & order) + inline style (highest) + inherited */
 function computeStylesForElement(el, rules, parentStyles = {}) {
   const styles = {};
 
-  // Inherit only when allowed for this element and property or when explicitly set to inherit.
   const tagName = el.tagName.toLowerCase();
   for (const prop of INHERITABLE) {
     const parentVal = parentStyles[prop];
@@ -508,7 +483,6 @@ function computeStylesForElement(el, rules, parentStyles = {}) {
     });
   });
 
-  // Resolve explicit inherit values after all sources have been merged.
   for (const [prop, val] of Object.entries(styles)) {
     if (val !== 'inherit') continue;
     const tagLower = (el.tagName || '').toLowerCase();
@@ -533,8 +507,6 @@ function computeStylesForElement(el, rules, parentStyles = {}) {
   return styles;
 }
 
-/** ---------- Tree Builder ---------- **/
-
 function isTextMeaningful(node) {
   if (node.nodeType !== node.TEXT_NODE) return false;
   const parentTag = node.parentNode?.nodeName?.toLowerCase();
@@ -542,7 +514,6 @@ function isTextMeaningful(node) {
   return /\S/.test(node.nodeValue || '');
 }
 
-/** Convert DOM Node -> plain object tree */
 function buildObjectTree(node, rules, parentStyles = {}) {
   if (node.nodeType === node.TEXT_NODE) {
     if (!isTextMeaningful(node)) return null;
@@ -576,15 +547,6 @@ function buildObjectTree(node, rules, parentStyles = {}) {
   return null;
 }
 
-/** ---------- Public API ---------- **/
-
-/**
- * Parse HTML -> object tree with merged styles.
- * @param {string} html - the HTML string
- * @param {object} opts
- *   - fetchExternalCss: boolean (default true) to load <link rel="stylesheet"> via HTTP
- *   - rootSelector: string | null — if provided, start from this element (e.g., 'body' or '#app')
- */
 async function parseHtmlToObject(
   html,
   {
@@ -622,7 +584,6 @@ async function parseHtmlToObject(
   const root = rootSelector ? document.querySelector(rootSelector) : document.documentElement;
   if (!root) throw new Error(`Root selector "${rootSelector}" not found`);
 
-  // Compute styles for the root element as well so page margins can reflect body/html CSS.
   const rootStyles = computeStylesForElement(root, rules, {});
 
   const nodes = [];

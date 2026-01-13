@@ -84,7 +84,6 @@ function parsePx(val, fallback = 0) {
   return parsePxWithOptions(val, fallback, { base: BASE_PT });
 }
 
-/** Parse lengths with basic units into pdf points. Supports px/pt/in/cm/mm/em/rem/% (with optional bases). */
 function parsePxWithOptions(val, fallback = 0, { base = BASE_PT, percentBase = null } = {}) {
   if (val == null) return fallback;
   if (typeof val === 'number' && Number.isFinite(val)) return val;
