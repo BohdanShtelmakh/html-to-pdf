@@ -34,6 +34,46 @@ async function run() {
 run();
 ```
 
+## 🚀 Why this exists
+
+Chrome-based tools like Puppeteer or Playwright are slow for backend PDF generation:
+- 2–4 seconds per PDF
+- Huge memory usage
+- Cold starts in serverless
+
+**@bohard/html-to-pdf** is built for speed-first PDF generation.
+
+Typical performance:
+
+| Engine | Typical Time |
+|:------ |------------:|
+| Puppeteer | 2–4s |
+| @bohard/html-to-pdf | **200–400ms** |
+
+This makes it perfect for:
+- APIs
+- Invoices & reports
+- Serverless (Lambda, Vercel, etc)
+- High-volume PDF generation
+
+## ⚠️ Not a full Chrome renderer
+
+This engine focuses on speed and stability, not 100% Chrome CSS compatibility.
+
+If you need:
+- perfect flexbox
+- advanced CSS grid
+- bleeding-edge browser features
+
+Use Puppeteer.
+
+If you need:
+- fast
+- stable
+- backend-grade PDFs
+
+Use this.
+
 ## API
 
 ### renderPdfFromHtml(html, options)
