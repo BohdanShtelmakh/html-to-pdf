@@ -10,8 +10,9 @@ function selectFontForInline(doc, styles, strong = false, italic = false, sizeOv
   const isItalic = italic || (styles['font-style'] || '').toLowerCase() === 'italic';
 
   const family = (styles['font-family'] || '').toLowerCase();
-  const wantsSans =
-    family.includes('arial') || family.includes('helvetica') || family.includes('sans-serif') || family.includes('sans');
+  const hasSans = family.includes('sans-serif') || family.includes('sans') || family.includes('arial') || family.includes('helvetica');
+  const hasSerif = family.includes('serif') || family.includes('times');
+  const wantsSans = hasSans || (family && !hasSerif);
 
   const custom = doc._fontMap && (wantsSans ? doc._fontMap.sans : doc._fontMap.serif);
   let fontName = wantsSans ? 'Helvetica' : 'Times-Roman';

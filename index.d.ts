@@ -13,7 +13,14 @@ export interface RenderOptions {
   outputPath?: string;
   rootSelector?: string;
   fetchExternalCss?: boolean;
+  loadTimeoutMs?: number;
+  externalCssTimeoutMs?: number;
+  allowScripts?: boolean;
   fonts?: FontPaths;
 }
 
 export function renderPdfFromHtml(html: string, options?: RenderOptions): Promise<Buffer>;
+declare const _default: {
+  renderPdfFromHtml: typeof renderPdfFromHtml;
+};
+export default _default;

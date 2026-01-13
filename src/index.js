@@ -9,6 +9,9 @@ const { makePdf } = require('./obj-pdf');
  * @param {string} [options.outputPath] - Path to write the PDF (default: ./output.pdf).
  * @param {string} [options.rootSelector] - Root selector for rendering (default: body).
  * @param {boolean} [options.fetchExternalCss] - Whether to fetch external CSS.
+ * @param {number} [options.loadTimeoutMs] - Max wait for external resources load.
+ * @param {number} [options.externalCssTimeoutMs] - HTTP timeout for external CSS.
+ * @param {boolean} [options.allowScripts] - Allow executing scripts inside HTML (unsafe).
  * @param {object} [options.fonts] - Font paths for PDFKit.
  * @param {string} [options.fonts.sansRegular]
  * @param {string} [options.fonts.sansBold]
@@ -24,6 +27,9 @@ async function renderPdfFromHtml(html, options = {}) {
   const tree = await parseHtmlToObject(html, {
     fetchExternalCss: !!options.fetchExternalCss,
     rootSelector: options.rootSelector || 'body',
+    loadTimeoutMs: options.loadTimeoutMs,
+    externalCssTimeoutMs: options.externalCssTimeoutMs,
+    allowScripts: options.allowScripts,
   });
 
   const pdfBuffer = await makePdf(tree, {

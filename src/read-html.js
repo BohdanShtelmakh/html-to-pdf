@@ -240,7 +240,7 @@ function expandShorthand(decl) {
  * Collect CSS rules from <style> tags and (optionally) external stylesheets.
  * Returns an array of { selector, specificity, declarations, order }.
  */
-async function collectCssRules(doc, { fetchExternal = true } = {}) {
+async function collectCssRules(doc, { fetchExternal = true, externalCssTimeoutMs = 5000 } = {}) {
   const rules = [];
   const page = {};
 
@@ -290,7 +290,7 @@ async function collectCssRules(doc, { fetchExternal = true } = {}) {
       try {
         let cssText = '';
         if (/^https?:\/\//i.test(href)) {
-          const res = await axios.get(href, { responseType: 'text' });
+          const res = await axios.get(href, { responseType: 'text', timeout: externalCssTimeoutMs });
           cssText = res.data || '';
         } else {
           const localPath = path.isAbsolute(href) ? href : path.resolve(process.cwd(), href);
@@ -585,23 +585,39 @@ function buildObjectTree(node, rules, parentStyles = {}) {
  *   - fetchExternalCss: boolean (default true) to load <link rel="stylesheet"> via HTTP
  *   - rootSelector: string | null — if provided, start from this element (e.g., 'body' or '#app')
  */
-async function parseHtmlToObject(html, { fetchExternalCss = true, rootSelector = 'body' } = {}) {
+async function parseHtmlToObject(
+  html,
+  {
+    fetchExternalCss = true,
+    rootSelector = 'body',
+    loadTimeoutMs = 3000,
+    externalCssTimeoutMs = 5000,
+    allowScripts = false,
+  } = {}
+) {
   const dom = new JSDOM(html, {
-    runScripts: 'dangerously',
-    resources: 'usable',
+    runScripts: allowScripts ? 'dangerously' : undefined,
+    resources: fetchExternalCss ? 'usable' : undefined,
     pretendToBeVisual: true,
   });
 
-  await new Promise((resolve, reject) => {
-    dom.window.addEventListener('load', resolve);
-    dom.window.addEventListener('error', reject);
-  });
+  if (fetchExternalCss) {
+    const loadPromise = new Promise((resolve) => {
+      dom.window.addEventListener('load', resolve, { once: true });
+      dom.window.addEventListener('error', resolve, { once: true });
+    });
+    const timeoutPromise = new Promise((resolve) => setTimeout(resolve, loadTimeoutMs));
+    await Promise.race([loadPromise, timeoutPromise]);
+  }
 
   await new Promise((r) => setTimeout(r, 50));
 
   const { document } = dom.window;
 
-  const { rules, page } = await collectCssRules(document, { fetchExternal: fetchExternalCss });
+  const { rules, page } = await collectCssRules(document, {
+    fetchExternal: fetchExternalCss,
+    externalCssTimeoutMs,
+  });
 
   const root = rootSelector ? document.querySelector(rootSelector) : document.documentElement;
   if (!root) throw new Error(`Root selector "${rootSelector}" not found`);
