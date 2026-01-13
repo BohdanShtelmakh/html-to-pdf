@@ -1,6 +1,7 @@
 {
   "name": "html-to-pdf",
   "version": "0.1.1",
+  "description": "Generate a PDF from HTML using a lightweight HTML/CSS parser and PDFKit.",
   "main": "src/index.js",
   "exports": {
     ".": {
@@ -11,6 +12,24 @@
   },
   "types": "index.d.ts",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BohdanShtelmakh/html-to-pdf.git"
+  },
+  "homepage": "https://github.com/BohdanShtelmakh/html-to-pdf#readme",
+  "bugs": {
+    "url": "https://github.com/BohdanShtelmakh/html-to-pdf/issues"
+  },
+  "keywords": [
+    "html",
+    "pdf",
+    "pdfkit",
+    "renderer",
+    "rendering"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
   "files": [
     "src/",
     "index.d.ts",
@@ -19,7 +38,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "test": "node -e \"console.log('No automated tests yet')\""
+    "test": "node -e \"const { renderPdfFromHtml } = require('./src/index.js'); renderPdfFromHtml('<p>OK</p>').then(b=>{if(!Buffer.isBuffer(b)) throw new Error('no buffer'); console.log('smoke ok', b.length);}).catch(e=>{console.error(e); process.exit(1);});\""
   },
   "dependencies": {
     "axios": "^1.12.2",

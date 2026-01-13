@@ -58,6 +58,12 @@ Do not run untrusted HTML. If you enable `allowScripts`, embedded scripts execut
 
 Script execution is optional via `allowScripts`, but rendering is not a full browser engine and may differ from Chromium. Expect occasional layout or styling mismatches.
 
+## Smoke Test
+
+```bash
+npm test
+```
+
 ## Fonts
 
 You can supply custom font paths via the `fonts` option:
