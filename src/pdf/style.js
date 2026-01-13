@@ -145,20 +145,20 @@ function parseColor(val, fallback = '#000000') {
     if (comps.length >= 3) {
       let alphaValue = alpha;
       if (alphaValue == null && comps.length >= 4) alphaValue = comps[3];
-      const rgb = comps.slice(0, 3).join(',');
+      const rgb = comps.slice(0, 3).map((c) => Math.max(0, Math.min(255, parseInt(c, 10) || 0)));
       let alphaOut = null;
       if (alphaValue != null) {
         const alphaStr = String(alphaValue).trim();
         if (alphaStr.endsWith('%')) {
           const pct = parseFloat(alphaStr);
-          if (Number.isFinite(pct)) alphaOut = String(pct / 100);
+          if (Number.isFinite(pct)) alphaOut = pct / 100;
         } else {
-          alphaOut = alphaStr;
+          const num = parseFloat(alphaStr);
+          if (Number.isFinite(num)) alphaOut = num;
         }
       }
-      const fn = alphaOut != null ? 'rgba' : 'rgb';
-      const out = alphaOut != null ? `${fn}(${rgb},${alphaOut})` : `${fn}(${rgb})`;
-      return out.toLowerCase();
+      if (alphaOut != null && alphaOut <= 0) return 'transparent';
+      return `#${rgb.map((n) => n.toString(16).padStart(2, '0')).join('')}`;
     }
   }
 
@@ -200,14 +200,14 @@ function lineHeightValue(styles, fontSize, tag) {
   if (raw == null) return fontSize * defaultLineHeightFor(tag) * CHROME_LH_FACTOR;
 
   const str = String(raw).trim();
-  if (!str) return fontSize * defaultLineHeightFor(tag) * CHROME_LH_FACTOR;
+  if (!str || str.toLowerCase() === 'normal') return fontSize * defaultLineHeightFor(tag) * CHROME_LH_FACTOR;
 
   if (/^-?\d+(\.\d+)?$/.test(str)) {
     const num = parseFloat(str);
-    return (num > 0 && num < 10 ? fontSize * num : num) * CHROME_LH_FACTOR;
+    return num > 0 && num < 10 ? fontSize * num : num;
   }
 
-  return parsePxWithOptions(str, fontSize * defaultLineHeightFor(tag), { base: fontSize }) * CHROME_LH_FACTOR;
+  return parsePxWithOptions(str, fontSize * defaultLineHeightFor(tag), { base: fontSize, percentBase: fontSize });
 }
 
 function lineGapFor(size, styles, tag) {

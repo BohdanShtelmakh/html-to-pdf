@@ -32,7 +32,9 @@ const INLINE_TAGS = new Set([
 ]);
 
 function shouldCollapseWhitespace(styles) {
-  const ws = String(styles['white-space'] || '').trim().toLowerCase();
+  const ws = String(styles['white-space'] || '')
+    .trim()
+    .toLowerCase();
   return ws !== 'pre' && ws !== 'pre-wrap';
 }
 
@@ -120,8 +122,11 @@ function measureLineWidth(line, doc) {
     const text = run.text || '';
     if (!text) continue;
     const size = styleNumber(run.styles || {}, 'font-size', BASE_PT);
+    const letterSpacing = styleNumber(run.styles || {}, 'letter-spacing', 0, { baseSize: size });
+    const wordSpacing = styleNumber(run.styles || {}, 'word-spacing', 0, { baseSize: size });
     selectFontForInline(doc, run.styles || {}, !!run.bold, !!run.italic, size);
-    width += doc.widthOfString(text);
+    const spaces = (text.match(/ /g) || []).length;
+    width += doc.widthOfString(text, { characterSpacing: letterSpacing }) + wordSpacing * spaces;
   }
   return width;
 }
@@ -174,12 +179,21 @@ async function renderFlexRow(children, ctx, { startX, startY, width, gap, bottom
     const explicitWidth = styleNumber(childStyles, 'width', null, { percentBase: width });
     const baseWidth = basis ?? explicitWidth ?? estimateNodeWidth(child, doc);
     const grow = parseFlexGrow(childStyles);
-    return { child, baseWidth: Math.max(0, baseWidth || 0), grow };
+    return { child, baseWidth: Math.max(0, baseWidth || 0), grow, hasExplicit: basis != null || explicitWidth != null };
   });
 
   let totalBase = items.reduce((sum, item) => sum + item.baseWidth, 0);
   const totalGrow = items.reduce((sum, item) => sum + (item.grow || 0), 0);
   let widths = items.map((item) => item.baseWidth);
+
+  const justifyValue = String(justify || 'flex-start').toLowerCase();
+  const canEven = ['space-between', 'space-around', 'space-evenly'].includes(justifyValue);
+  const equalWidth = count ? available / count : 0;
+  const allAuto = items.every((item) => !item.hasExplicit && (!item.grow || item.grow === 0));
+  if (canEven && allAuto && equalWidth > 0 && items.every((item) => item.baseWidth <= equalWidth)) {
+    widths = items.map(() => equalWidth);
+    totalBase = available;
+  }
 
   if (totalGrow > 0 && available > totalBase) {
     const extra = available - totalBase;
@@ -199,7 +213,6 @@ async function renderFlexRow(children, ctx, { startX, startY, width, gap, bottom
 
   const baseTotal = totalBase + baseGap * Math.max(0, count - 1);
   const remaining = Math.max(0, width - baseTotal);
-  const justifyValue = String(justify || 'flex-start').toLowerCase();
   let offset = 0;
   let actualGap = baseGap;
   if (justifyValue === 'flex-end' || justifyValue === 'end') {
@@ -354,15 +367,24 @@ async function renderNode(node, ctx) {
       const gap = Number.isFinite(rawGap) ? rawGap : lineGapFor(size, styles, tag);
       const runs = normalizeRuns(inlineRuns(node), shouldCollapseWhitespace(styles));
       const plain = runs.map((r) => r.text).join('');
+      const letterSpacing = styleNumber(styles, 'letter-spacing', 0, { baseSize: size });
+      const wordSpacing = styleNumber(styles, 'word-spacing', 0, { baseSize: size });
       const blockWidth = Math.max(0, layout.contentWidth() - marginLeft - marginRight);
       const blockX = layout.x + marginLeft;
       const availableWidth = blockWidth - paddingLeft - paddingRight;
       selectFontForInline(doc, styles, false, false, size);
-      const textWidth = doc.widthOfString(plain);
+      const spaces = (plain.match(/ /g) || []).length;
+      const textWidth = doc.widthOfString(plain, { characterSpacing: letterSpacing }) + wordSpacing * spaces;
       const isSingleLine = textWidth <= availableWidth && !plain.includes('\n');
       const h = isSingleLine
         ? lineHeight
-        : doc.heightOfString(plain, { width: availableWidth, align, lineGap: gap });
+        : doc.heightOfString(plain, {
+            width: availableWidth,
+            align,
+            lineGap: gap,
+            characterSpacing: letterSpacing,
+            wordSpacing,
+          });
       const boxH = paddingTop + h + paddingBottom;
       layout.ensureSpace(boxH);
 
@@ -446,6 +468,8 @@ async function renderNode(node, ctx) {
 
     const gap = lineGapFor(size, styles, tag);
     const text = gatherPlainText(node);
+    const letterSpacing = styleNumber(styles, 'letter-spacing', 0, { baseSize: size });
+    const wordSpacing = styleNumber(styles, 'word-spacing', 0, { baseSize: size });
     const padding = styleNumber(styles, 'padding', 0);
     const paddingTop = styleNumber(styles, 'padding-top', padding);
     const paddingBottom = styleNumber(styles, 'padding-bottom', padding);
@@ -465,6 +489,8 @@ async function renderNode(node, ctx) {
       width: layout.contentWidth(),
       align,
       lineGap: gap,
+      characterSpacing: letterSpacing,
+      wordSpacing,
     });
 
     const totalHeight = paddingTop + h + paddingBottom + borderBottom;
@@ -495,6 +521,8 @@ async function renderNode(node, ctx) {
     const gap = lineGapFor(size, styles, tag);
     const runs = inlineRuns(node);
     const plain = runs.map((r) => r.text).join('');
+    const letterSpacing = styleNumber(styles, 'letter-spacing', 0, { baseSize: size });
+    const wordSpacing = styleNumber(styles, 'word-spacing', 0, { baseSize: size });
     const padding = styleNumber(styles, 'padding', 0);
     const paddingTop = styleNumber(styles, 'padding-top', padding);
     const paddingBottom = styleNumber(styles, 'padding-bottom', padding);
@@ -514,6 +542,8 @@ async function renderNode(node, ctx) {
       width: availableWidth,
       align,
       lineGap: gap,
+      characterSpacing: letterSpacing,
+      wordSpacing,
     });
     const boxHeight = h + paddingTop + paddingBottom;
     layout.ensureSpace(boxHeight);
@@ -564,28 +594,56 @@ async function renderNode(node, ctx) {
     const paddingLeft = styleNumber(styles, 'padding-left', padding);
     const paddingRight = styleNumber(styles, 'padding-right', padding);
     const bg = styleColor(styles, 'background-color', null);
-    const borderLeftWidth = styleNumber(styles, 'border-left-width', 0);
-    const borderLeftColor = styleColor(styles, 'border-left-color', '#333333');
-    const borderLeftPaint = ['none', 'transparent'].includes(String(borderLeftColor).trim().toLowerCase())
-      ? null
-      : borderLeftColor;
-    const borderLeft = borderLeftWidth > 0 && borderLeftPaint ? borderLeftWidth : 0;
-    const borderBottomWidth = styleNumber(styles, 'border-bottom-width', 0);
-    const borderBottomColor = styleColor(styles, 'border-bottom-color', '#333333');
-    const borderBottomPaint = ['none', 'transparent'].includes(String(borderBottomColor).trim().toLowerCase())
-      ? null
-      : borderBottomColor;
-    const borderBottom = borderBottomWidth > 0 && borderBottomPaint ? borderBottomWidth : 0;
+    const borderWidth = styleNumber(styles, 'border-width', 0);
+    const borderColor = styleColor(styles, 'border-color', '#333333');
+    const borderStyle = String(styles['border-style'] || '')
+      .trim()
+      .toLowerCase();
+    const normalizeBorder = (width, color, style) => {
+      const paint = ['none', 'transparent'].includes(String(color).trim().toLowerCase()) ? null : color;
+      const styleVal = String(style || '')
+        .trim()
+        .toLowerCase();
+      if (styleVal === 'none' || styleVal === 'hidden') return { width: 0, color: null };
+      if (!paint || !Number.isFinite(width) || width <= 0) return { width: 0, color: null };
+      return { width, color: paint };
+    };
+
+    const borderTop = normalizeBorder(
+      styleNumber(styles, 'border-top-width', borderWidth),
+      styleColor(styles, 'border-top-color', borderColor),
+      styles['border-top-style'] || borderStyle
+    );
+    const borderRight = normalizeBorder(
+      styleNumber(styles, 'border-right-width', borderWidth),
+      styleColor(styles, 'border-right-color', borderColor),
+      styles['border-right-style'] || borderStyle
+    );
+    const borderBottom = normalizeBorder(
+      styleNumber(styles, 'border-bottom-width', borderWidth),
+      styleColor(styles, 'border-bottom-color', borderColor),
+      styles['border-bottom-style'] || borderStyle
+    );
+    const borderLeft = normalizeBorder(
+      styleNumber(styles, 'border-left-width', borderWidth),
+      styleColor(styles, 'border-left-color', borderColor),
+      styles['border-left-style'] || borderStyle
+    );
+    const radius = styleNumber(styles, 'border-radius', 0);
+
     // Ensure we have space for the box chrome before drawing content.
-    layout.ensureSpace(paddingTop + paddingBottom + borderBottom);
+    layout.ensureSpace(paddingTop + paddingBottom + borderTop.width + borderBottom.width);
     const startY = layout.y;
 
-    if (paddingTop || bg || borderLeft || borderBottom) layout.y += paddingTop; // apply top padding
+    if (paddingTop || bg || borderTop.width || borderRight.width || borderBottom.width || borderLeft.width) {
+      layout.y += borderTop.width + paddingTop; // apply top border + padding
+    }
 
     const originalX = layout.x;
     const originalContentWidth = layout.contentWidth;
-    layout.x = layout.x + paddingLeft;
-    layout.contentWidth = () => originalContentWidth() - paddingLeft - paddingRight;
+    layout.x = layout.x + borderLeft.width + paddingLeft;
+    layout.contentWidth = () =>
+      originalContentWidth() - borderLeft.width - borderRight.width - paddingLeft - paddingRight;
 
     const display = String(styles.display || '').toLowerCase();
     const isFlex = display === 'flex';
@@ -644,10 +702,14 @@ async function renderNode(node, ctx) {
         const gap = lineGapFor(size, styles, tag);
         const runs = inlineRuns(node);
         const plain = runs.map((r) => r.text).join('');
+        const letterSpacing = styleNumber(styles, 'letter-spacing', 0, { baseSize: size });
+        const wordSpacing = styleNumber(styles, 'word-spacing', 0, { baseSize: size });
         const h = doc.heightOfString(plain, {
           width: layout.contentWidth(),
           align,
           lineGap: gap,
+          characterSpacing: letterSpacing,
+          wordSpacing,
         });
         layout.ensureSpace(h);
         doc.fillColor(styleColor(styles, 'color', '#000'));
@@ -684,29 +746,77 @@ async function renderNode(node, ctx) {
     }
 
     const endY = layout.y;
-    const boxH = endY - startY + paddingBottom; // include bottom padding
+    const boxH = endY - startY + paddingBottom + borderBottom.width; // include bottom padding + border
 
-    if ((bg || borderLeft || borderBottom) && boxH > 0) {
+    const uniformBorderWidth =
+      borderTop.width === borderRight.width &&
+      borderTop.width === borderBottom.width &&
+      borderTop.width === borderLeft.width;
+    const uniformBorderColor =
+      borderTop.color === borderRight.color &&
+      borderTop.color === borderBottom.color &&
+      borderTop.color === borderLeft.color;
+    const anyBorderWidth = borderTop.width || borderRight.width || borderBottom.width || borderLeft.width;
+    const anyBorderColor = borderTop.color || borderRight.color || borderBottom.color || borderLeft.color;
+    const roundedStrokeWidth = uniformBorderWidth ? borderTop.width : anyBorderWidth;
+    const roundedStrokeColor = uniformBorderColor ? borderTop.color : anyBorderColor;
+    const useRounded = radius > 0 && (bg || anyBorderWidth);
+
+    if ((bg || borderTop.width || borderRight.width || borderBottom.width || borderLeft.width) && boxH > 0) {
       const x = layout.x;
       const w = layout.contentWidth();
-      if (bg) {
-        doc.save().rect(x, startY, w, boxH).fill(bg).restore();
-      }
-      if (borderLeft) {
-        doc.save().rect(x, startY, borderLeft, boxH).fill(borderLeftPaint || '#333333').restore();
-      }
-      if (borderBottom) {
-        doc
-          .save()
-          .rect(x, startY + boxH - borderBottom, w, borderBottom) // draw after children
-          .fill(borderBottomPaint || '#333333')
-          .restore();
+      if (useRounded) {
+        const r = Math.min(radius, w / 2, boxH / 2);
+        if (bg) {
+          doc.save().roundedRect(x, startY, w, boxH, r).fill(bg).restore();
+        }
+        if (roundedStrokeWidth) {
+          doc
+            .save()
+            .lineWidth(roundedStrokeWidth)
+            .strokeColor(roundedStrokeColor || '#333333')
+            .roundedRect(x, startY, w, boxH, r)
+            .stroke()
+            .restore();
+        }
+      } else {
+        if (bg) {
+          doc.save().rect(x, startY, w, boxH).fill(bg).restore();
+        }
+        if (borderTop.width) {
+          doc
+            .save()
+            .rect(x, startY, w, borderTop.width)
+            .fill(borderTop.color || '#333333')
+            .restore();
+        }
+        if (borderRight.width) {
+          doc
+            .save()
+            .rect(x + w - borderRight.width, startY, borderRight.width, boxH)
+            .fill(borderRight.color || '#333333')
+            .restore();
+        }
+        if (borderBottom.width) {
+          doc
+            .save()
+            .rect(x, startY + boxH - borderBottom.width, w, borderBottom.width)
+            .fill(borderBottom.color || '#333333')
+            .restore();
+        }
+        if (borderLeft.width) {
+          doc
+            .save()
+            .rect(x, startY, borderLeft.width, boxH)
+            .fill(borderLeft.color || '#333333')
+            .restore();
+        }
       }
     }
 
     // Ensure we don't overrun the page when adding bottom padding/border.
-    layout.ensureSpace(paddingBottom + borderBottom);
-    if (paddingBottom || borderBottom) layout.cursorToNextLine(paddingBottom + borderBottom);
+    layout.ensureSpace(paddingBottom + borderBottom.width);
+    if (paddingBottom || borderBottom.width) layout.cursorToNextLine(paddingBottom + borderBottom.width);
     finishBlock();
     return;
   }

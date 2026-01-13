@@ -1,4 +1,4 @@
-const { styleNumber, styleColor, textAlign } = require('./style');
+const { styleNumber, styleColor, lineHeightValue } = require('./style');
 const { inlineRuns, selectFontForInline, gatherPlainText } = require('./text');
 
 async function renderList(node, ctx, ordered = false) {
@@ -11,8 +11,7 @@ async function renderList(node, ctx, ordered = false) {
     const text = gatherPlainText(li) || '';
 
     const fontSize = styleNumber(li.styles || {}, 'font-size', 12);
-
-    const lineGap = Math.max(0, fontSize * (1.2 - 1));
+    const lineGap = Math.max(0, lineHeightValue(li.styles || {}, fontSize, 'li') - fontSize);
     doc.font('Helvetica').fontSize(fontSize).fillColor('#000');
 
     const h = doc.heightOfString(bullet + text, {
@@ -37,7 +36,7 @@ async function renderList(node, ctx, ordered = false) {
     }
     doc.text('', { continued: false });
 
-    layout.cursorToNextLine(h + lineGap);
+    layout.cursorToNextLine(h);
     idx++;
   }
 }

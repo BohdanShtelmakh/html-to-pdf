@@ -187,7 +187,7 @@ function expandShorthand(decl) {
     return out;
   }
 
-  if (property === 'border' || property.startsWith('border-')) {
+  if (property === 'border' || ['border-top', 'border-right', 'border-bottom', 'border-left'].includes(property)) {
     const width = parts.find((p) => isBorderWidthToken(p));
     const color = [...parts].reverse().find((p) => isColorToken(p));
     const side = property === 'border' ? '' : property.replace('border-', '') + '-';
