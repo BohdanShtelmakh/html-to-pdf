@@ -5,14 +5,14 @@ Generate a PDF from HTML using a lightweight HTML/CSS parser and PDFKit.
 ## Install
 
 ```bash
-npm install html-to-pdf
+npm install @bohard/html-to-pdf
 ```
 
 ## Usage
 
 ```js
 const fs = require('fs');
-const { renderPdfFromHtml } = require('html-to-pdf');
+const { renderPdfFromHtml } = require('@bohard/html-to-pdf');
 
 async function run() {
   const html = '<html><body><h1>Hello</h1></body></html>';
