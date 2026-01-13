@@ -10,7 +10,6 @@ export interface FontPaths {
 }
 
 export interface RenderOptions {
-  outputPath?: string;
   rootSelector?: string;
   fetchExternalCss?: boolean;
   loadTimeoutMs?: number;

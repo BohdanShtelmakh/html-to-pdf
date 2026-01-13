@@ -13,7 +13,6 @@ async function renderPdfFromHtml(html, options = {}) {
 
   const pdfBuffer = await makePdf(tree, {
     fonts: options.fonts,
-    outputPath: options.outputPath,
   });
   return pdfBuffer;
 }

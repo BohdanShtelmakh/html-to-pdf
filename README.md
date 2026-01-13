@@ -17,7 +17,6 @@ const { renderPdfFromHtml } = require('html-to-pdf');
 async function run() {
   const html = '<html><body><h1>Hello</h1></body></html>';
   const pdfBuffer = await renderPdfFromHtml(html, {
-    outputPath: 'output.pdf',
     rootSelector: 'body',
     fetchExternalCss: false,
     loadTimeoutMs: 3000,
@@ -39,10 +38,9 @@ run();
 
 ### renderPdfFromHtml(html, options)
 
-Returns a `Buffer` containing the PDF contents. Also writes to disk when `outputPath` is provided.
+Returns a `Buffer` containing the PDF contents.
 
 Options:
-- `outputPath`: where to write the PDF (optional)
 - `rootSelector`: CSS selector for the render root (default: `body`)
 - `fetchExternalCss`: boolean (default: `false`)
 - `loadTimeoutMs`: max wait for external resources (default: `3000`)
@@ -55,6 +53,10 @@ Options:
 ## Security
 
 Do not run untrusted HTML. If you enable `allowScripts`, embedded scripts execute in your process. Always review or sanitize HTML before rendering.
+
+## Notes
+
+Script execution is optional via `allowScripts`, but rendering is not a full browser engine and may differ from Chromium. Expect occasional layout or styling mismatches.
 
 ## Fonts
 
