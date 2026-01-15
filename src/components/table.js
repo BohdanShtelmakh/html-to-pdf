@@ -41,6 +41,7 @@ function resolveBorder(cellStyles, rowStyles, tableStyles) {
 
 async function renderTable(node, ctx, tableStyles = {}) {
   const { doc, layout } = ctx;
+  const measureOnly = !!ctx?.measureOnly;
 
   const tbody = (node.children || []).find((c) => c.type === 'element' && c.tag === 'tbody');
   if (!tbody) return;
@@ -130,17 +131,19 @@ async function renderTable(node, ctx, tableStyles = {}) {
       const cellStyles = cell.styles || {};
       const bg = resolveBackground(cellStyles, rowStyles, tableStyles);
       const { borderWidth, borderColor } = resolveBorder(cellStyles, rowStyles, tableStyles);
-      if (bg) {
-        doc.save().rect(x, y, spanWidth, rowHeight).fill(bg).restore();
-      }
-      if (borderWidth > 0) {
-        doc
-          .save()
-          .lineWidth(borderWidth)
-          .strokeColor(borderColor || '#000')
-          .rect(x, y, spanWidth, rowHeight)
-          .stroke()
-          .restore();
+      if (!measureOnly) {
+        if (bg) {
+          doc.save().rect(x, y, spanWidth, rowHeight).fill(bg).restore();
+        }
+        if (borderWidth > 0) {
+          doc
+            .save()
+            .lineWidth(borderWidth)
+            .strokeColor(borderColor || '#000')
+            .rect(x, y, spanWidth, rowHeight)
+            .stroke()
+            .restore();
+        }
       }
 
       const isHeader = cell.tag === 'th';
@@ -154,18 +157,20 @@ async function renderTable(node, ctx, tableStyles = {}) {
       const padL = styleNumber(cell.styles || {}, 'padding-left', cellPadding);
       const padR = styleNumber(cell.styles || {}, 'padding-right', cellPadding);
 
-      doc.x = x + padL;
-      doc.y = y + padT;
-      for (const run of runs) {
-        selectFontForInline(doc, run.styles || {}, isHeader || !!run.bold, !!run.italic);
-        doc.fillColor(styleColor(run.styles || {}, 'color', '#000')).text(run.text, {
-          width: spanWidth - padL - padR,
-          align,
-          lineGap,
-          continued: true,
-        });
+      if (!measureOnly) {
+        doc.x = x + padL;
+        doc.y = y + padT;
+        for (const run of runs) {
+          selectFontForInline(doc, run.styles || {}, isHeader || !!run.bold, !!run.italic);
+          doc.fillColor(styleColor(run.styles || {}, 'color', '#000')).text(run.text, {
+            width: spanWidth - padL - padR,
+            align,
+            lineGap,
+            continued: true,
+          });
+        }
+        doc.text('', { continued: false });
       }
-      doc.text('', { continued: false });
       drawCol += colspan;
     }
 

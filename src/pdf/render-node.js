@@ -1,4 +1,5 @@
 const { renderImage, renderTable } = require('../components');
+const { Resvg } = require('@resvg/resvg-js');
 const {
   BASE_PT,
   defaultFontSizeFor,
@@ -10,10 +11,13 @@ const {
   lineGapFor,
   lineHeightValue,
   parsePx,
+  parsePxWithOptions,
 } = require('./style');
 const { inlineRuns, selectFontForInline, gatherPlainText } = require('./text');
 const { renderList, renderPre } = require('./blocks');
 const { Layout } = require('./layout');
+
+const PX_TO_PT = 72 / 96;
 
 const INLINE_TAGS = new Set([
   'span',
@@ -69,6 +73,48 @@ function elementChildren(node) {
   return (node.children || []).filter((child) => child.type === 'element');
 }
 
+function escapeXml(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function serializeSvg(node) {
+  if (!node) return '';
+  if (node.type === 'text') return escapeXml(node.text || '');
+  if (node.type !== 'element') return '';
+  const tag = node.tag || '';
+  const attrs = node.attrs || {};
+  const attrString = Object.entries(attrs)
+    .map(([k, v]) => `${k}="${escapeXml(v)}"`)
+    .join(' ');
+  const open = attrString ? `<${tag} ${attrString}>` : `<${tag}>`;
+  const children = (node.children || []).map(serializeSvg).join('');
+  return `${open}${children}</${tag}>`;
+}
+
+function parseViewBox(viewBox) {
+  if (!viewBox) return null;
+  const parts = String(viewBox)
+    .trim()
+    .split(/[\s,]+/)
+    .map((p) => parseFloat(p));
+  if (parts.length !== 4 || parts.some((n) => !Number.isFinite(n))) return null;
+  return { w: parts[2], h: parts[3] };
+}
+
+function parseAttrDimension(value) {
+  if (value == null) return null;
+  const parsed = parsePx(value, null);
+  if (parsed != null) return parsed;
+  const num = parseFloat(String(value).trim());
+  if (!Number.isFinite(num)) return null;
+  return num * PX_TO_PT;
+}
+
 function parseGridColumnCount(value) {
   if (!value || typeof value !== 'string') return null;
   const repeatMatch = value.match(/repeat\(\s*(\d+)\s*,/i);
@@ -77,12 +123,261 @@ function parseGridColumnCount(value) {
   return parts.length || null;
 }
 
+function expandRepeatTokens(value) {
+  if (!value || typeof value !== 'string') return value;
+  return value.replace(/repeat\(\s*(\d+)\s*,\s*([^)]+)\)/gi, (_m, countRaw, inner) => {
+    const count = parseInt(countRaw, 10);
+    if (!Number.isFinite(count) || count <= 0) return inner;
+    const tokens = inner.trim().split(/\s+/).filter(Boolean);
+    if (!tokens.length) return '';
+    return Array.from({ length: count }, () => tokens.join(' ')).join(' ');
+  });
+}
+
+function parseGridTemplateColumns(value, totalWidth, gap) {
+  if (!value || typeof value !== 'string') return null;
+  const expanded = expandRepeatTokens(value);
+  const parts = expanded.trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return null;
+
+  const cols = [];
+  let fixed = 0;
+  let frTotal = 0;
+
+  for (const token of parts) {
+    const lower = token.toLowerCase();
+    if (lower.endsWith('fr')) {
+      const fr = parseFloat(lower.replace('fr', ''));
+      const value = Number.isFinite(fr) && fr > 0 ? fr : 1;
+      cols.push({ type: 'fr', value });
+      frTotal += value;
+      continue;
+    }
+    if (lower === 'auto') {
+      cols.push({ type: 'fr', value: 1 });
+      frTotal += 1;
+      continue;
+    }
+    const px = parsePxWithOptions(token, null, { percentBase: totalWidth });
+    if (px != null) {
+      cols.push({ type: 'fixed', value: px });
+      fixed += px;
+      continue;
+    }
+    cols.push({ type: 'fr', value: 1 });
+    frTotal += 1;
+  }
+
+  const gapsTotal = Math.max(0, gap) * Math.max(0, cols.length - 1);
+  const remaining = Math.max(0, totalWidth - fixed - gapsTotal);
+
+  return cols.map((col) => {
+    if (col.type === 'fixed') return col.value;
+    if (frTotal <= 0) return 0;
+    return (remaining * col.value) / frTotal;
+  });
+}
+
 function parseGridSpan(value) {
   if (!value || typeof value !== 'string') return 1;
   const match = value.match(/span\s+(\d+)/i);
   if (!match) return 1;
   const span = parseInt(match[1], 10);
   return Number.isFinite(span) && span > 0 ? span : 1;
+}
+
+function hasInlineBoxStyles(styles = {}) {
+  const bg = styleColor(styles, 'background-color', null);
+  if (bg && String(bg).toLowerCase() !== 'transparent') return true;
+  if (styleNumber(styles, 'padding', 0) > 0) return true;
+  if (styleNumber(styles, 'padding-top', 0) > 0) return true;
+  if (styleNumber(styles, 'padding-right', 0) > 0) return true;
+  if (styleNumber(styles, 'padding-bottom', 0) > 0) return true;
+  if (styleNumber(styles, 'padding-left', 0) > 0) return true;
+  if (styleNumber(styles, 'border-width', 0) > 0) return true;
+  if (styleNumber(styles, 'border-radius', 0) > 0) return true;
+  const display = String(styles.display || '').toLowerCase();
+  return display === 'inline-block';
+}
+
+function runHasInlineBoxStyles(runStyles = {}, baseStyles = {}) {
+  if (!runStyles) return false;
+  const display = String(runStyles.display || '').toLowerCase();
+  if (display === 'inline-block') return true;
+  const bg = styleColor(runStyles, 'background-color', null);
+  const baseBg = styleColor(baseStyles, 'background-color', null);
+  if (bg && String(bg).toLowerCase() !== 'transparent' && bg !== baseBg) return true;
+  const pad = styleNumber(runStyles, 'padding', 0);
+  const basePad = styleNumber(baseStyles, 'padding', 0);
+  if (pad > 0 && pad !== basePad) return true;
+  const padT = styleNumber(runStyles, 'padding-top', 0);
+  const padR = styleNumber(runStyles, 'padding-right', 0);
+  const padB = styleNumber(runStyles, 'padding-bottom', 0);
+  const padL = styleNumber(runStyles, 'padding-left', 0);
+  const basePadT = styleNumber(baseStyles, 'padding-top', 0);
+  const basePadR = styleNumber(baseStyles, 'padding-right', 0);
+  const basePadB = styleNumber(baseStyles, 'padding-bottom', 0);
+  const basePadL = styleNumber(baseStyles, 'padding-left', 0);
+  if (padT > 0 && padT !== basePadT) return true;
+  if (padR > 0 && padR !== basePadR) return true;
+  if (padB > 0 && padB !== basePadB) return true;
+  if (padL > 0 && padL !== basePadL) return true;
+  const border = styleNumber(runStyles, 'border-width', 0);
+  const baseBorder = styleNumber(baseStyles, 'border-width', 0);
+  if (border > 0 && border !== baseBorder) return true;
+  const radius = styleNumber(runStyles, 'border-radius', 0);
+  const baseRadius = styleNumber(baseStyles, 'border-radius', 0);
+  return radius > 0 && radius !== baseRadius;
+}
+
+function renderInlineRuns(runs, ctx, { baseStyles, align, lineGap, tag }) {
+  const { doc, layout } = ctx;
+  const measureOnly = !!ctx?.measureOnly;
+  const debugInline = process.env.HTML_TO_PDF_DEBUG === '1';
+  const contentWidth = layout.contentWidth();
+  const lines = [];
+  let current = { runs: [], width: 0, height: 0 };
+
+  for (const run of runs) {
+    const s = { ...baseStyles, ...(run.styles || {}) };
+    const inlineBox = runHasInlineBoxStyles(run.styles || {}, baseStyles);
+    const size = styleNumber(s, 'font-size', BASE_PT);
+    const letterSpacing = styleNumber(s, 'letter-spacing', 0, { baseSize: size });
+    const wordSpacing = styleNumber(s, 'word-spacing', 0, { baseSize: size });
+    const padding = inlineBox ? styleNumber(s, 'padding', 0) : 0;
+    const padT = inlineBox ? styleNumber(s, 'padding-top', padding) : 0;
+    const padR = inlineBox ? styleNumber(s, 'padding-right', padding) : 0;
+    const padB = inlineBox ? styleNumber(s, 'padding-bottom', padding) : 0;
+    const padL = inlineBox ? styleNumber(s, 'padding-left', padding) : 0;
+    const borderWidth = inlineBox ? styleNumber(s, 'border-width', 0) : 0;
+    const borderStyle = inlineBox
+      ? String(s['border-style'] || '')
+          .trim()
+          .toLowerCase()
+      : 'none';
+    const borderColor = inlineBox ? styleColor(s, 'border-color', '#333333') : null;
+    const borderPaint =
+      inlineBox && borderColor && !['none', 'transparent'].includes(String(borderColor).trim().toLowerCase())
+        ? borderColor
+        : null;
+    const border = inlineBox && borderStyle !== 'none' && borderStyle !== 'hidden' && borderPaint ? borderWidth : 0;
+    const radius = inlineBox ? styleNumber(s, 'border-radius', 0) : 0;
+    const bg = inlineBox ? styleColor(s, 'background-color', null) : null;
+
+    selectFontForInline(doc, s, !!run.bold, !!run.italic, size);
+    const spaces = (run.text || '').match(/ /g) || [];
+    const text = run.text || '';
+    const textWidth = doc.widthOfString(text, { characterSpacing: letterSpacing }) + wordSpacing * spaces.length;
+    const measuredTextHeight = doc.heightOfString(text, { lineGap: 0 });
+    const textHeight = measuredTextHeight;
+    const runLineHeight = lineHeightValue(s, size, tag);
+    const contentH = inlineBox ? Math.max(runLineHeight, measuredTextHeight) : runLineHeight;
+    const boxW = textWidth + padL + padR + border * 2;
+    const boxH = contentH + padT + padB + border * 2;
+    if (debugInline && inlineBox) {
+      console.log('[inline-box]', {
+        text,
+        size,
+        textWidth,
+        measuredTextHeight,
+        textHeight,
+        runLineHeight,
+        padT,
+        padB,
+        padL,
+        padR,
+        border,
+        boxW,
+        boxH,
+      });
+    }
+
+    if (current.width > 0 && current.width + boxW > contentWidth) {
+      lines.push(current);
+      current = { runs: [], width: 0, height: 0 };
+    }
+
+    current.runs.push({
+      run,
+      styles: s,
+      inlineBox,
+      size,
+      padT,
+      padR,
+      padB,
+      padL,
+      border,
+      borderPaint,
+      radius,
+      bg,
+      boxW,
+      boxH,
+      textHeight,
+    });
+    current.width += boxW;
+    current.height = Math.max(current.height, boxH);
+  }
+
+  if (current.runs.length) lines.push(current);
+
+  let y = layout.y;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    let x = layout.x;
+    for (const item of line.runs) {
+      const yOffset = (line.height - item.boxH) / 2;
+      if (!measureOnly) {
+        if (item.bg && String(item.bg).toLowerCase() !== 'transparent' && item.boxW > 0 && item.boxH > 0) {
+          if (item.radius > 0) {
+            const r = Math.min(item.radius, item.boxW / 2, item.boxH / 2);
+            doc
+              .save()
+              .roundedRect(x, y + yOffset, item.boxW, item.boxH, r)
+              .fill(item.bg)
+              .restore();
+          } else {
+            doc
+              .save()
+              .rect(x, y + yOffset, item.boxW, item.boxH)
+              .fill(item.bg)
+              .restore();
+          }
+        }
+        if (item.border && item.boxW > 0 && item.boxH > 0) {
+          if (item.radius > 0) {
+            const r = Math.min(item.radius, item.boxW / 2, item.boxH / 2);
+            doc
+              .save()
+              .lineWidth(item.border)
+              .strokeColor(item.borderPaint || '#333333')
+              .roundedRect(x, y + yOffset, item.boxW, item.boxH, r)
+              .stroke()
+              .restore();
+          } else {
+            doc
+              .save()
+              .lineWidth(item.border)
+              .strokeColor(item.borderPaint || '#333333')
+              .rect(x, y + yOffset, item.boxW, item.boxH)
+              .stroke()
+              .restore();
+          }
+        }
+
+        doc.fillColor(styleColor(item.styles, 'color', '#000'));
+        const inlineAdjust = item.inlineBox
+          ? Math.max(0, (item.boxH - item.padT - item.padB - item.border * 2 - item.textHeight) / 2)
+          : 0;
+        const textY = y + yOffset + item.border + item.padT + inlineAdjust;
+        doc.text(item.run.text || '', x + item.border + item.padL, textY, { lineGap: 0 });
+      }
+
+      x += item.boxW;
+    }
+    y += line.height + (i < lines.length - 1 ? lineGap : 0);
+  }
+
+  return y - layout.y;
 }
 
 function collectLineRuns(node, parentStyles = {}) {
@@ -116,6 +411,100 @@ function collectLineRuns(node, parentStyles = {}) {
   return lines;
 }
 
+async function renderInlineSvg(node, ctx) {
+  const { doc, layout } = ctx;
+  const measureOnly = !!ctx?.measureOnly;
+  const ignoreInvalid = !!ctx?.options?.ignoreInvalidImages;
+  const styles = mergeStyles(node);
+  let width = styleNumber(styles, 'width', null, { percentBase: layout.contentWidth() });
+  let height = styleNumber(styles, 'height', null);
+  const attrWidth = parseAttrDimension(node.attrs?.width);
+  const attrHeight = parseAttrDimension(node.attrs?.height);
+
+  if (width == null && attrWidth != null) width = attrWidth;
+  if (height == null && attrHeight != null) height = attrHeight;
+
+  const viewBox = parseViewBox(node.attrs?.viewBox);
+  const aspect = width && height ? width / height : viewBox ? viewBox.w / viewBox.h : null;
+
+  const maxW = layout.contentWidth();
+  const maxH = Number.isFinite(styleNumber(styles, 'max-height', Infinity))
+    ? styleNumber(styles, 'max-height', Infinity)
+    : Infinity;
+  const minW = styleNumber(styles, 'min-width', 0);
+  const minH = styleNumber(styles, 'min-height', 0);
+  const widthSpecified = width != null;
+  const heightSpecified = height != null;
+  const maxWidthStyle = styleNumber(styles, 'max-width', widthSpecified ? Infinity : maxW);
+
+  if (!width && !height) {
+    if (viewBox) {
+      width = Math.min(maxW, viewBox.w * PX_TO_PT);
+      height = aspect ? width / aspect : width * 0.6;
+    } else {
+      width = Math.min(maxW, 400 * PX_TO_PT);
+      height = width * 0.6;
+    }
+  } else if (width && !height && aspect) {
+    height = width / aspect;
+  } else if (height && !width && aspect) {
+    width = height * aspect;
+  }
+
+  if (!width) width = Math.min(maxW, 300 * PX_TO_PT);
+  if (!height) height = aspect ? width / aspect : width * 0.6;
+
+  width = Math.max(minW, Math.min(width, maxWidthStyle));
+  height = Math.max(minH, Math.min(height, maxH));
+
+  const shouldCapToContent = !(widthSpecified && heightSpecified);
+  if (shouldCapToContent && width > maxW) {
+    const scale = maxW / width;
+    width = maxW;
+    height = height * scale;
+  }
+
+  const svgScale = Number.isFinite(ctx?.options?.svgScale) ? ctx.options.svgScale : 2;
+  const renderScale = svgScale > 0 ? svgScale : 1;
+  const widthPx = Math.max(1, Math.round((width / PX_TO_PT) * renderScale));
+  const heightPx = Math.max(1, Math.round((height / PX_TO_PT) * renderScale));
+  const svgText = serializeSvg(node);
+
+  let buf;
+  try {
+    const fitTo =
+      widthPx > 0 ? { mode: 'width', value: widthPx } : heightPx > 0 ? { mode: 'height', value: heightPx } : undefined;
+    const resvg = new Resvg(svgText, {
+      imageRendering: 0,
+      textRendering: 2,
+      shapeRendering: 2,
+      dpi: 196,
+      ...(fitTo ? { fitTo } : undefined),
+    });
+    buf = Buffer.from(resvg.render().asPng());
+  } catch (err) {
+    if (!ignoreInvalid) console.error('Inline SVG render failed:', err.message || err);
+    return;
+  }
+
+  layout.ensureSpace(height + 6);
+  const align = textAlign(styles);
+  let x = layout.x;
+  if (align === 'center') x = layout.x + (layout.contentWidth() - width) / 2;
+  else if (align === 'right') x = layout.x + layout.contentWidth() - width;
+
+  if (!measureOnly) {
+    try {
+      doc.image(buf, x, layout.y, { width, height });
+    } catch (err) {
+      if (!ignoreInvalid) throw err;
+      return;
+    }
+  }
+
+  layout.cursorToNextLine(height + 4);
+}
+
 function measureLineWidth(line, doc) {
   let width = 0;
   for (const run of line) {
@@ -144,12 +533,16 @@ function estimateNodeWidth(node, doc) {
   const padding = styleNumber(styles, 'padding', 0);
   const padL = styleNumber(styles, 'padding-left', padding);
   const padR = styleNumber(styles, 'padding-right', padding);
+  const borderWidth = styleNumber(styles, 'border-width', 0);
+  const borderL = styleNumber(styles, 'border-left-width', borderWidth);
+  const borderR = styleNumber(styles, 'border-right-width', borderWidth);
   const lines = collectLineRuns(node, styles);
   let maxWidth = 0;
   for (const line of lines) {
     maxWidth = Math.max(maxWidth, measureLineWidth(line, doc));
   }
-  return maxWidth + padL + padR;
+  const widthEps = 1;
+  return maxWidth + padL + padR + borderL + borderR + widthEps;
 }
 
 function parseFlexGrow(styles) {
@@ -167,10 +560,13 @@ function parseFlexGrow(styles) {
   return 0;
 }
 
-async function renderFlexRow(children, ctx, { startX, startY, width, gap, bottomMargin, justify }) {
+async function renderFlexRow(children, ctx, { startX, startY, width, gap, rowGap, bottomMargin, justify, wrap }) {
   const { doc } = ctx;
+  const measureOnly = !!ctx?.measureOnly;
+  const debugInline = process.env.HTML_TO_PDF_DEBUG === '1';
   if (!children.length) return 0;
   const baseGap = Number.isFinite(gap) ? gap : 0;
+  const rowSpace = Number.isFinite(rowGap) ? rowGap : baseGap;
   const count = children.length;
   const available = Math.max(0, width - baseGap * Math.max(0, count - 1));
   const items = children.map((child) => {
@@ -193,6 +589,46 @@ async function renderFlexRow(children, ctx, { startX, startY, width, gap, bottom
   if (canEven && allAuto && equalWidth > 0 && items.every((item) => item.baseWidth <= equalWidth)) {
     widths = items.map(() => equalWidth);
     totalBase = available;
+  }
+
+  if (wrap && String(wrap).toLowerCase() !== 'nowrap') {
+    let maxY = startY;
+    let rowY = startY;
+    let rowH = 0;
+    let x = startX;
+    for (let i = 0; i < count; i++) {
+      const child = children[i];
+      let childWidth = Math.max(0, widths[i] || 0);
+      if (childWidth > width) childWidth = width;
+      if (x > startX && x + childWidth > startX + width) {
+        rowY += rowH + rowSpace;
+        x = startX;
+        rowH = 0;
+      }
+      const right = doc.page.width - (x + childWidth);
+      const childLayout = new Layout(doc, {
+        margins: { left: x, right, top: rowY, bottom: bottomMargin },
+        measureOnly,
+      });
+      childLayout.atStartOfPage = false;
+      await renderNode(child, { doc, layout: childLayout, options: ctx.options, measureOnly });
+      const childHeight = childLayout.y - rowY;
+      if (debugInline && child?.tag === 'div') {
+        console.log('[flex-item]', {
+          tag: child.tag,
+          class: child.attrs?.class || '',
+          childHeight,
+          rowY,
+          x,
+          childWidth,
+          containerWidth: width,
+        });
+      }
+      rowH = Math.max(rowH, childHeight);
+      maxY = Math.max(maxY, rowY + rowH);
+      x += childWidth + baseGap;
+    }
+    return maxY - startY;
   }
 
   if (totalGrow > 0 && available > totalBase) {
@@ -241,43 +677,92 @@ async function renderFlexRow(children, ctx, { startX, startY, width, gap, bottom
     const child = children[i];
     const childWidth = Math.max(0, widths[i] || 0);
     const right = doc.page.width - (x + childWidth);
-    const childLayout = new Layout(doc, { margins: { left: x, right, top: startY, bottom: bottomMargin } });
+    const childLayout = new Layout(doc, {
+      margins: { left: x, right, top: startY, bottom: bottomMargin },
+      measureOnly,
+    });
     childLayout.atStartOfPage = false;
-    await renderNode(child, { doc, layout: childLayout });
+    await renderNode(child, { doc, layout: childLayout, options: ctx.options, measureOnly });
     maxHeight = Math.max(maxHeight, childLayout.y - startY);
     x += childWidth + actualGap;
   }
   return maxHeight;
 }
 
-async function renderGrid(children, ctx, { startX, startY, width, columns, colGap, rowGap, bottomMargin }) {
+async function renderGrid(children, ctx, { startX, startY, width, columns, colGap, rowGap, bottomMargin, alignItems }) {
   const { doc } = ctx;
+  const measureOnly = !!ctx?.measureOnly;
   if (!children.length) return 0;
-  const cols = Math.max(1, columns);
-  const colWidth = Math.max(0, (width - colGap * (cols - 1)) / cols);
+  const colWidths = Array.isArray(columns) && columns.length
+    ? columns.map((w) => Math.max(0, w || 0))
+    : Array.from({ length: Math.max(1, columns || 1) }, () =>
+        Math.max(0, (width - colGap * (Math.max(1, columns || 1) - 1)) / Math.max(1, columns || 1))
+      );
+  const cols = colWidths.length;
+  const rows = [];
   let colIndex = 0;
   let rowY = startY;
-  let rowHeight = 0;
-  let maxY = startY;
+  let currentRow = { y: rowY, height: 0, items: [] };
 
   for (const child of children) {
     let span = parseGridSpan(child.styles?.['grid-column']);
     if (span > cols) span = cols;
-    if (colIndex + span > cols) {
-      rowY += rowHeight + rowGap;
+    if (colIndex + span > cols && currentRow.items.length) {
+      rows.push(currentRow);
+      rowY += currentRow.height + rowGap;
       colIndex = 0;
-      rowHeight = 0;
+      currentRow = { y: rowY, height: 0, items: [] };
     }
 
-    const cellWidth = colWidth * span + colGap * (span - 1);
-    const x = startX + colIndex * (colWidth + colGap);
+    const cellWidth =
+      colWidths.slice(colIndex, colIndex + span).reduce((sum, w) => sum + w, 0) + colGap * (span - 1);
+    const x =
+      startX +
+      colWidths.slice(0, colIndex).reduce((sum, w) => sum + w, 0) +
+      colGap * colIndex;
+
     const right = doc.page.width - (x + cellWidth);
-    const childLayout = new Layout(doc, { margins: { left: x, right, top: rowY, bottom: bottomMargin } });
-    childLayout.atStartOfPage = false;
-    await renderNode(child, { doc, layout: childLayout });
-    rowHeight = Math.max(rowHeight, childLayout.y - rowY);
-    maxY = Math.max(maxY, rowY + rowHeight);
+    const measureLayout = new Layout(doc, {
+      margins: { left: x, right, top: rowY, bottom: bottomMargin },
+      measureOnly: true,
+    });
+    measureLayout.atStartOfPage = false;
+    await renderNode(child, { doc, layout: measureLayout, options: ctx.options, measureOnly: true });
+    const childHeight = Math.max(0, measureLayout.y - rowY);
+
+    currentRow.items.push({ child, x, width: cellWidth, height: childHeight });
+    currentRow.height = Math.max(currentRow.height, childHeight);
     colIndex += span;
+  }
+
+  if (currentRow.items.length) {
+    rows.push(currentRow);
+  }
+
+  const align = String(alignItems || 'stretch').toLowerCase();
+  const totalHeight =
+    rows.reduce((sum, row) => sum + row.height, 0) + Math.max(0, rows.length - 1) * rowGap;
+
+  if (measureOnly) return totalHeight;
+
+  let maxY = startY;
+  for (const row of rows) {
+    if (!row.items || !row.items.length) continue;
+    for (const item of row.items) {
+      const right = doc.page.width - (item.x + item.width);
+      const childLayout = new Layout(doc, {
+        margins: { left: item.x, right, top: row.y, bottom: bottomMargin },
+      });
+      childLayout.atStartOfPage = false;
+      const minHeight = align === 'stretch' ? row.height : 0;
+      await renderNode(item.child, {
+        doc,
+        layout: childLayout,
+        options: ctx.options,
+        minHeight: minHeight || undefined,
+      });
+    }
+    maxY = Math.max(maxY, row.y + row.height);
   }
 
   return maxY - startY;
@@ -285,11 +770,28 @@ async function renderGrid(children, ctx, { startX, startY, width, columns, colGa
 
 async function renderNode(node, ctx) {
   const { doc, layout } = ctx;
+  const measureOnly = !!ctx?.measureOnly;
+  const debugInline = process.env.HTML_TO_PDF_DEBUG === '1';
+  const minHeight = Number.isFinite(ctx?.minHeight) ? ctx.minHeight : null;
+  const childCtx = minHeight != null ? { ...ctx, minHeight: null } : ctx;
   if (!node) return;
 
   if (node.type === 'text') {
     const text = node.text || '';
-    doc.text(text, { continued: true });
+    if (!text) return;
+    if (!measureOnly) {
+      doc.text(text, { continued: true });
+      return;
+    }
+    const size = BASE_PT;
+    const gap = lineGapFor(size, {}, 'div');
+    selectFontForInline(doc, {}, false, false, size);
+    const h = doc.heightOfString(text, {
+      width: layout.contentWidth(),
+      lineGap: gap,
+    });
+    layout.ensureSpace(h);
+    layout.cursorToNextLine(h);
     return;
   }
 
@@ -307,6 +809,12 @@ async function renderNode(node, ctx) {
 
   if (tag === 'img') {
     await renderImage(node, ctx);
+    finishBlock();
+    return;
+  }
+
+  if (tag === 'svg') {
+    await renderInlineSvg(node, ctx);
     finishBlock();
     return;
   }
@@ -388,32 +896,34 @@ async function renderNode(node, ctx) {
       const boxH = paddingTop + h + paddingBottom;
       layout.ensureSpace(boxH);
 
-      if (bg && boxH > 0) {
-        doc.save().rect(blockX, startY, blockWidth, boxH).fill(bg).restore();
-      }
-      if (borderLeft && boxH > 0) {
-        doc
-          .save()
-          .rect(blockX, startY, borderLeft, boxH)
-          .fill(borderLeftPaint || '#333333')
-          .restore();
-      }
+      if (!measureOnly) {
+        if (bg && boxH > 0) {
+          doc.save().rect(blockX, startY, blockWidth, boxH).fill(bg).restore();
+        }
+        if (borderLeft && boxH > 0) {
+          doc
+            .save()
+            .rect(blockX, startY, borderLeft, boxH)
+            .fill(borderLeftPaint || '#333333')
+            .restore();
+        }
 
-      doc.fillColor(color);
-      doc.x = blockX + paddingLeft;
-      doc.y = startY + paddingTop;
-      for (const run of runs) {
-        const s = { ...styles, ...(run.styles || {}) };
-        selectFontForInline(doc, s, !!run.bold, !!run.italic);
-        doc.fillColor(styleColor(s, 'color', color)).text(run.text, {
-          width: availableWidth,
-          align,
-          lineGap: gap,
-          continued: true,
-          underline: !!run.underline,
-        });
+        doc.fillColor(color);
+        doc.x = blockX + paddingLeft;
+        doc.y = startY + paddingTop;
+        for (const run of runs) {
+          const s = { ...styles, ...(run.styles || {}) };
+          selectFontForInline(doc, s, !!run.bold, !!run.italic);
+          doc.fillColor(styleColor(s, 'color', color)).text(run.text, {
+            width: availableWidth,
+            align,
+            lineGap: gap,
+            continued: true,
+            underline: !!run.underline,
+          });
+        }
+        doc.text('', { continued: false });
       }
-      doc.text('', { continued: false });
       layout.y = Math.max(layout.y, startY + boxH);
       finishBlock();
       return;
@@ -441,7 +951,7 @@ async function renderNode(node, ctx) {
     const boxH = endY - startY;
     const w = blockWidth;
 
-    if ((bg || borderLeft) && boxH > 0) {
+    if (!measureOnly && (bg || borderLeft) && boxH > 0) {
       if (bg) {
         doc.save().rect(blockX, startY, w, boxH).fill(bg).restore();
       }
@@ -494,9 +1004,11 @@ async function renderNode(node, ctx) {
     const startY = layout.y;
     const textY = startY + paddingTop;
 
-    doc.fillColor(color).text(text, layout.x, textY, { width: layout.contentWidth(), align, lineGap: gap });
+    if (!measureOnly) {
+      doc.fillColor(color).text(text, layout.x, textY, { width: layout.contentWidth(), align, lineGap: gap });
+    }
 
-    if (borderBottom) {
+    if (!measureOnly && borderBottom) {
       const drawY = startY + paddingTop + h + paddingBottom;
 
       doc
@@ -515,6 +1027,7 @@ async function renderNode(node, ctx) {
     const size = styleNumber(styles, 'font-size', BASE_PT);
     const gap = lineGapFor(size, styles, tag);
     const runs = inlineRuns(node);
+    const useInlineBoxes = runs.some((run) => runHasInlineBoxStyles(run.styles || {}, styles));
     const plain = runs.map((r) => r.text).join('');
     const letterSpacing = styleNumber(styles, 'letter-spacing', 0, { baseSize: size });
     const wordSpacing = styleNumber(styles, 'word-spacing', 0, { baseSize: size });
@@ -533,51 +1046,65 @@ async function renderNode(node, ctx) {
 
     selectFontForInline(doc, styles, false, false, size);
     const availableWidth = layout.contentWidth() - paddingLeft - paddingRight;
-    const h = doc.heightOfString(plain, {
+    let h = doc.heightOfString(plain, {
       width: availableWidth,
       align,
       lineGap: gap,
       characterSpacing: letterSpacing,
       wordSpacing,
     });
-    const boxHeight = h + paddingTop + paddingBottom;
-    layout.ensureSpace(boxHeight);
-
-    if (bg && boxHeight > 0) {
-      doc.save().rect(layout.x, layout.y, layout.contentWidth(), boxHeight).fill(bg).restore();
+    let boxHeight = h + paddingTop + paddingBottom;
+    if (useInlineBoxes) {
+      layout.ensureSpace(boxHeight);
+      const startYInline = layout.y + paddingTop;
+      const hInline = renderInlineRuns(runs, ctx, { baseStyles: styles, align, lineGap: gap, tag });
+      h = hInline;
+      boxHeight = hInline + paddingTop + paddingBottom;
+      layout.y = Math.max(layout.y, startYInline + hInline + paddingBottom);
     }
-    if (borderLeft && boxHeight > 0) {
-      doc
-        .save()
-        .rect(layout.x, layout.y, borderLeft, boxHeight)
-        .fill(borderLeftPaint || '#333333')
-        .restore();
-    }
+    if (!useInlineBoxes) layout.ensureSpace(boxHeight);
 
-    doc.fillColor(color);
-    doc.x = layout.x + paddingLeft;
+    if (!measureOnly && !useInlineBoxes) {
+      if (bg && boxHeight > 0) {
+        doc.save().rect(layout.x, layout.y, layout.contentWidth(), boxHeight).fill(bg).restore();
+      }
+      if (borderLeft && boxHeight > 0) {
+        doc
+          .save()
+          .rect(layout.x, layout.y, borderLeft, boxHeight)
+          .fill(borderLeftPaint || '#333333')
+          .restore();
+      }
+
+      doc.fillColor(color);
+      doc.x = layout.x + paddingLeft;
+    }
     const startY = layout.y;
-    doc.y = startY + paddingTop;
+    if (!measureOnly) doc.y = startY + paddingTop;
 
-    for (const run of runs) {
-      const s = { ...styles, ...(run.styles || {}) };
-      selectFontForInline(doc, s, !!run.bold, !!run.italic);
-      const ls = styleNumber(s, 'letter-spacing', null, { baseSize: size });
-      const ws = styleNumber(s, 'word-spacing', null, { baseSize: size });
-      const textOptions = {
-        width: availableWidth,
-        align,
-        lineGap: gap,
-        continued: true,
-        underline: !!run.underline,
-      };
-      if (ls != null) textOptions.characterSpacing = ls;
-      if (ws != null) textOptions.wordSpacing = ws;
-      doc.fillColor(styleColor(s, 'color', color)).text(run.text, textOptions);
+    if (!measureOnly && !useInlineBoxes) {
+      for (const run of runs) {
+        const s = { ...styles, ...(run.styles || {}) };
+        selectFontForInline(doc, s, !!run.bold, !!run.italic);
+        const ls = styleNumber(s, 'letter-spacing', null, { baseSize: size });
+        const ws = styleNumber(s, 'word-spacing', null, { baseSize: size });
+        const textOptions = {
+          width: availableWidth,
+          align,
+          lineGap: gap,
+          continued: true,
+          underline: !!run.underline,
+        };
+        if (ls != null) textOptions.characterSpacing = ls;
+        if (ws != null) textOptions.wordSpacing = ws;
+        doc.fillColor(styleColor(s, 'color', color)).text(run.text, textOptions);
+      }
+      doc.text('', { continued: false });
     }
-    doc.text('', { continued: false });
 
-    layout.y = Math.max(layout.y, startY + boxHeight);
+    if (!useInlineBoxes) {
+      layout.y = Math.max(layout.y, startY + boxHeight);
+    }
     finishBlock();
     return;
   }
@@ -628,23 +1155,148 @@ async function renderNode(node, ctx) {
 
     layout.ensureSpace(paddingTop + paddingBottom + borderTop.width + borderBottom.width);
     const startY = layout.y;
+    const blockX = layout.x;
+    const blockWidth = layout.contentWidth();
+    const contentX = blockX + borderLeft.width + paddingLeft;
+    const contentWidth = Math.max(0, blockWidth - borderLeft.width - borderRight.width - paddingLeft - paddingRight);
+    const contentStartY = startY + borderTop.width + paddingTop;
+    const hasFrame = bg || borderTop.width || borderRight.width || borderBottom.width || borderLeft.width;
+    const prepaint = !measureOnly && hasFrame;
+    const inlineOnly = isInlineOnly(node);
 
-    if (paddingTop || bg || borderTop.width || borderRight.width || borderBottom.width || borderLeft.width) {
+    if (prepaint && (node.children || []).length) {
+      const debug = process.env.HTML_TO_PDF_DEBUG === '1';
+      const className = node.attrs?.class || '';
+      let measuredContent = 0;
+      if (inlineOnly) {
+        const size = styleNumber(styles, 'font-size', BASE_PT);
+        const gap = lineGapFor(size, styles, tag);
+        const plain = gatherPlainText(node);
+        selectFontForInline(doc, styles, false, false, size);
+        const letterSpacing = styleNumber(styles, 'letter-spacing', 0, { baseSize: size });
+        const wordSpacing = styleNumber(styles, 'word-spacing', 0, { baseSize: size });
+        const spaces = (plain.match(/ /g) || []).length;
+        const textWidth = doc.widthOfString(plain, { characterSpacing: letterSpacing }) + wordSpacing * spaces;
+        const lineHeight = lineHeightValue(styles, size, tag);
+        const singleLine = !plain.includes('\n') && textWidth <= contentWidth;
+        measuredContent = singleLine
+          ? lineHeight
+          : doc.heightOfString(plain, {
+              width: contentWidth,
+              align: textAlign(styles),
+              lineGap: gap,
+              characterSpacing: letterSpacing,
+              wordSpacing,
+            });
+      } else {
+        const measureLayout = new Layout(doc, {
+          margins: {
+            left: contentX,
+            right: doc.page.width - (contentX + contentWidth),
+            top: contentStartY,
+            bottom: layout.marginBottom,
+          },
+          measureOnly: true,
+        });
+        measureLayout.atStartOfPage = false;
+      for (const child of node.children || []) {
+        await renderNode(child, { doc, layout: measureLayout, options: ctx.options, measureOnly: true });
+      }
+        measuredContent = Math.max(0, measureLayout.y - contentStartY);
+      }
+
+      if (debug && className) {
+        console.log('[div-measure]', {
+          className,
+          measuredContent,
+          paddingTop,
+          paddingBottom,
+          borderTop: borderTop.width,
+          borderBottom: borderBottom.width,
+        });
+      }
+
+      const boxH = borderTop.width + paddingTop + measuredContent + paddingBottom + borderBottom.width;
+      const desiredBoxH = minHeight != null ? Math.max(boxH, minHeight) : boxH;
+      if (desiredBoxH > 0) {
+        const uniformBorderWidth =
+          borderTop.width === borderRight.width &&
+          borderTop.width === borderBottom.width &&
+          borderTop.width === borderLeft.width;
+        const uniformBorderColor =
+          borderTop.color === borderRight.color &&
+          borderTop.color === borderBottom.color &&
+          borderTop.color === borderLeft.color;
+        const anyBorderWidth = borderTop.width || borderRight.width || borderBottom.width || borderLeft.width;
+        const anyBorderColor = borderTop.color || borderRight.color || borderBottom.color || borderLeft.color;
+        const roundedStrokeWidth = uniformBorderWidth ? borderTop.width : anyBorderWidth;
+        const roundedStrokeColor = uniformBorderColor ? borderTop.color : anyBorderColor;
+        const useRounded = radius > 0 && (bg || anyBorderWidth);
+
+        if (useRounded) {
+          const r = Math.min(radius, blockWidth / 2, desiredBoxH / 2);
+          if (bg) doc.save().roundedRect(blockX, startY, blockWidth, desiredBoxH, r).fill(bg).restore();
+          if (roundedStrokeWidth) {
+            const inset = Math.max(0, roundedStrokeWidth / 2);
+            const insetW = Math.max(0, blockWidth - roundedStrokeWidth);
+            const insetH = Math.max(0, desiredBoxH - roundedStrokeWidth);
+            const insetR = Math.max(0, r - inset);
+            doc
+              .save()
+              .lineWidth(roundedStrokeWidth)
+              .strokeColor(roundedStrokeColor || '#333333')
+              .roundedRect(blockX + inset, startY + inset, insetW, insetH, insetR)
+              .stroke()
+              .restore();
+          }
+        } else {
+          if (bg) doc.save().rect(blockX, startY, blockWidth, desiredBoxH).fill(bg).restore();
+          if (borderTop.width) {
+            doc
+              .save()
+              .rect(blockX, startY, blockWidth, borderTop.width)
+              .fill(borderTop.color || '#333333')
+              .restore();
+          }
+          if (borderRight.width) {
+            doc
+              .save()
+              .rect(blockX + blockWidth - borderRight.width, startY, borderRight.width, desiredBoxH)
+              .fill(borderRight.color || '#333333')
+              .restore();
+          }
+          if (borderBottom.width) {
+            doc
+              .save()
+              .rect(blockX, startY + desiredBoxH - borderBottom.width, blockWidth, borderBottom.width)
+              .fill(borderBottom.color || '#333333')
+              .restore();
+          }
+          if (borderLeft.width) {
+            doc
+              .save()
+              .rect(blockX, startY, borderLeft.width, desiredBoxH)
+              .fill(borderLeft.color || '#333333')
+              .restore();
+          }
+        }
+      }
+    }
+
+    if (paddingTop || hasFrame) {
       layout.y += borderTop.width + paddingTop;
     }
 
     const originalX = layout.x;
     const originalContentWidth = layout.contentWidth;
-    layout.x = layout.x + borderLeft.width + paddingLeft;
-    layout.contentWidth = () =>
-      originalContentWidth() - borderLeft.width - borderRight.width - paddingLeft - paddingRight;
+    layout.x = contentX;
+    layout.contentWidth = () => contentWidth;
 
     const display = String(styles.display || '').toLowerCase();
     const isFlex = display === 'flex';
     const isGrid = display === 'grid';
     const flexDirection = String(styles['flex-direction'] || 'row').toLowerCase();
     const justifyContent = String(styles['justify-content'] || 'flex-start').toLowerCase();
-    const contentStartY = layout.y;
 
     if (isFlex || isGrid) {
       const children = elementChildren(node);
@@ -656,27 +1308,34 @@ async function renderNode(node, ctx) {
       let usedHeight = 0;
 
       if (isFlex) {
+        const flexWrap = String(styles['flex-wrap'] || 'nowrap').toLowerCase();
         if (flexDirection === 'column') {
           let first = true;
           for (const child of children) {
             if (!first) layout.cursorToNextLine(rowGap);
-            await renderNode(child, ctx);
+            await renderNode(child, childCtx);
             first = false;
           }
           usedHeight = layout.y - contentStartY;
         } else {
-          usedHeight = await renderFlexRow(children, ctx, {
+          usedHeight = await renderFlexRow(children, childCtx, {
             startX: contentX,
             startY: contentStartY,
             width: contentWidth,
             gap: colGap,
+            rowGap,
             bottomMargin: layout.marginBottom,
             justify: justifyContent,
+            wrap: flexWrap,
           });
         }
       } else {
-        const columns = parseGridColumnCount(styles['grid-template-columns']) || 1;
-        usedHeight = await renderGrid(children, ctx, {
+        const columns =
+          parseGridTemplateColumns(styles['grid-template-columns'], contentWidth, colGap) ||
+          parseGridColumnCount(styles['grid-template-columns']) ||
+          1;
+        const alignItems = String(styles['align-items'] || 'stretch').toLowerCase();
+        usedHeight = await renderGrid(children, childCtx, {
           startX: contentX,
           startY: contentStartY,
           width: contentWidth,
@@ -684,46 +1343,88 @@ async function renderNode(node, ctx) {
           colGap,
           rowGap,
           bottomMargin: layout.marginBottom,
+          alignItems,
         });
       }
 
       layout.y = Math.max(layout.y, contentStartY + usedHeight);
     } else {
-      const inlineOnly = isInlineOnly(node);
-      if (inlineOnly) {
-        const size = styleNumber(styles, 'font-size', BASE_PT);
-        const gap = lineGapFor(size, styles, tag);
+    if (inlineOnly) {
+      const size = styleNumber(styles, 'font-size', BASE_PT);
+      const gap = lineGapFor(size, styles, tag);
         const runs = inlineRuns(node);
-        const plain = runs.map((r) => r.text).join('');
-        const letterSpacing = styleNumber(styles, 'letter-spacing', 0, { baseSize: size });
-        const wordSpacing = styleNumber(styles, 'word-spacing', 0, { baseSize: size });
-        const h = doc.heightOfString(plain, {
-          width: layout.contentWidth(),
-          align,
-          lineGap: gap,
-          characterSpacing: letterSpacing,
-          wordSpacing,
-        });
-        layout.ensureSpace(h);
-        doc.fillColor(styleColor(styles, 'color', '#000'));
-        doc.x = layout.x;
-        const startYInline = layout.y;
-        doc.y = startYInline;
-        for (const run of runs) {
-          const s = { ...styles, ...(run.styles || {}) };
-          selectFontForInline(doc, s, !!run.bold, !!run.italic);
-          doc.fillColor(styleColor(s, 'color', '#000')).text(run.text, {
+        const useInlineBoxes = runs.some((run) => runHasInlineBoxStyles(run.styles || {}, styles));
+        const hasFrame =
+          bg || borderTop.width || borderRight.width || borderBottom.width || borderLeft.width || radius > 0;
+
+        if (useInlineBoxes) {
+          const plain = runs.map((r) => r.text).join('');
+          selectFontForInline(doc, styles, false, false, size);
+          const estimated = doc.heightOfString(plain, {
             width: layout.contentWidth(),
             align,
             lineGap: gap,
-            continued: true,
           });
+          layout.ensureSpace(estimated);
+          const startYInline = layout.y;
+          const h = renderInlineRuns(runs, ctx, { baseStyles: styles, align, lineGap: gap, tag });
+          layout.y = Math.max(layout.y, startYInline + h);
+        } else {
+          const plain = runs.map((r) => r.text).join('');
+          const letterSpacing = styleNumber(styles, 'letter-spacing', 0, { baseSize: size });
+          const wordSpacing = styleNumber(styles, 'word-spacing', 0, { baseSize: size });
+          selectFontForInline(doc, styles, false, false, size);
+          const spaces = (plain.match(/ /g) || []).length;
+          const textWidth = doc.widthOfString(plain, { characterSpacing: letterSpacing }) + wordSpacing * spaces;
+          const lineHeight = lineHeightValue(styles, size, tag);
+          const singleLine = !plain.includes('\n') && textWidth <= layout.contentWidth();
+          const h = singleLine
+            ? lineHeight
+            : doc.heightOfString(plain, {
+                width: layout.contentWidth(),
+                align,
+                lineGap: gap,
+                characterSpacing: letterSpacing,
+                wordSpacing,
+              });
+          if (debugInline && plain) {
+            console.log('[inline-text]', {
+              text: plain,
+              size,
+              lineGap: gap,
+              height: h,
+              contentWidth: layout.contentWidth(),
+              paddingTop,
+              paddingBottom,
+              borderTop: borderTop.width,
+              borderBottom: borderBottom.width,
+            });
+          }
+          layout.ensureSpace(h);
+          const startYInline = layout.y;
+          if (!measureOnly) {
+            doc.fillColor(styleColor(styles, 'color', '#000'));
+            doc.x = layout.x;
+            const textHeight = singleLine ? doc.currentLineHeight(true) : h;
+            const textOffset = hasFrame && singleLine ? Math.max(0, (lineHeight - textHeight) / 2) : 0;
+            doc.y = startYInline + textOffset;
+            for (const run of runs) {
+              const s = { ...styles, ...(run.styles || {}) };
+              selectFontForInline(doc, s, !!run.bold, !!run.italic);
+              doc.fillColor(styleColor(s, 'color', '#000')).text(run.text, {
+                width: layout.contentWidth(),
+                align,
+                lineGap: singleLine ? 0 : gap,
+                continued: true,
+              });
+            }
+            doc.text('', { continued: false });
+          }
+          layout.y = Math.max(layout.y, startYInline + h);
         }
-        doc.text('', { continued: false });
-        layout.y = Math.max(layout.y, startYInline + h);
       } else {
         for (const child of node.children || []) {
-          await renderNode(child, ctx);
+          await renderNode(child, childCtx);
         }
       }
     }
@@ -736,7 +1437,24 @@ async function renderNode(node, ctx) {
       layout.pendingBottomMargin = 0;
     }
 
+    if (minHeight != null) {
+      const currentBoxH = layout.y - startY + paddingBottom + borderBottom.width;
+      if (currentBoxH < minHeight) {
+        layout.y += minHeight - currentBoxH;
+      }
+    }
     const endY = layout.y;
+    if (process.env.HTML_TO_PDF_DEBUG === '1' && node.attrs?.class) {
+      console.log('[div-render]', {
+        className: node.attrs?.class || '',
+        contentHeight: endY - contentStartY,
+        paddingTop,
+        paddingBottom,
+        borderTop: borderTop.width,
+        borderBottom: borderBottom.width,
+        minHeight,
+      });
+    }
     const boxH = endY - startY + paddingBottom + borderBottom.width;
 
     const uniformBorderWidth =
@@ -753,7 +1471,12 @@ async function renderNode(node, ctx) {
     const roundedStrokeColor = uniformBorderColor ? borderTop.color : anyBorderColor;
     const useRounded = radius > 0 && (bg || anyBorderWidth);
 
-    if ((bg || borderTop.width || borderRight.width || borderBottom.width || borderLeft.width) && boxH > 0) {
+    if (
+      !measureOnly &&
+      !prepaint &&
+      (bg || borderTop.width || borderRight.width || borderBottom.width || borderLeft.width) &&
+      boxH > 0
+    ) {
       const x = layout.x;
       const w = layout.contentWidth();
       if (useRounded) {
@@ -762,11 +1485,15 @@ async function renderNode(node, ctx) {
           doc.save().roundedRect(x, startY, w, boxH, r).fill(bg).restore();
         }
         if (roundedStrokeWidth) {
+          const inset = Math.max(0, roundedStrokeWidth / 2);
+          const insetW = Math.max(0, w - roundedStrokeWidth);
+          const insetH = Math.max(0, boxH - roundedStrokeWidth);
+          const insetR = Math.max(0, r - inset);
           doc
             .save()
             .lineWidth(roundedStrokeWidth)
             .strokeColor(roundedStrokeColor || '#333333')
-            .roundedRect(x, startY, w, boxH, r)
+            .roundedRect(x + inset, startY + inset, insetW, insetH, insetR)
             .stroke()
             .restore();
         }

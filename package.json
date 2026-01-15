@@ -43,6 +43,7 @@
   "dependencies": {
     "css": "^3.0.0",
     "jsdom": "^20.0.0",
-    "pdfkit": "^0.17.2"
+    "pdfkit": "^0.17.2",
+    "@resvg/resvg-js": "^2.6.2"
   }
 }

@@ -1,9 +1,11 @@
 const fs = require('fs');
 const path = require('path');
 const { mergeStyles, styleNumber, parsePx, textAlign } = require('../pdf/style');
+const { Resvg } = require('@resvg/resvg-js');
 
 async function renderImage(node, ctx) {
   const { doc, layout } = ctx;
+  const measureOnly = !!ctx?.measureOnly;
   const ignoreInvalid = !!ctx?.options?.ignoreInvalidImages;
   const styles = mergeStyles(node);
   let width = styleNumber(styles, 'width', null);
@@ -30,6 +32,7 @@ async function renderImage(node, ctx) {
   if (!src) return;
 
   let buf;
+  let svgText = null;
   try {
     if (/^data:image\//i.test(src)) {
       const commaIndex = src.indexOf(',');
@@ -47,7 +50,16 @@ async function renderImage(node, ctx) {
       }
       payload = payload.replace(/\s+/g, '');
 
-      if (isBase64) {
+      if (mime.includes('svg')) {
+        if (isBase64) {
+          let normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
+          const pad = normalized.length % 4;
+          if (pad) normalized += '='.repeat(4 - pad);
+          svgText = Buffer.from(normalized, 'base64').toString('utf8');
+        } else {
+          svgText = payload;
+        }
+      } else if (isBase64) {
         let normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
         const pad = normalized.length % 4;
         if (pad) normalized += '='.repeat(4 - pad);
@@ -56,21 +68,49 @@ async function renderImage(node, ctx) {
         buf = Buffer.from(payload, 'binary');
       }
 
-      const isPng = buf.length > 8 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47;
-      const isJpeg = buf.length > 2 && buf[0] === 0xff && buf[1] === 0xd8;
-      if (mime.includes('png') && !isPng) throw new Error('Invalid PNG data');
-      if ((mime.includes('jpeg') || mime.includes('jpg')) && !isJpeg) throw new Error('Invalid JPEG data');
+      if (buf) {
+        const isPng = buf.length > 8 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47;
+        const isJpeg = buf.length > 2 && buf[0] === 0xff && buf[1] === 0xd8;
+        if (mime.includes('png') && !isPng) throw new Error('Invalid PNG data');
+        if ((mime.includes('jpeg') || mime.includes('jpg')) && !isJpeg) throw new Error('Invalid JPEG data');
+      }
     } else if (/^https?:\/\//i.test(src)) {
       const res = await fetch(src);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      buf = Buffer.from(await res.arrayBuffer());
+      const contentType = (res.headers.get('content-type') || '').toLowerCase();
+      if (contentType.includes('image/svg+xml')) {
+        svgText = await res.text();
+      } else {
+        buf = Buffer.from(await res.arrayBuffer());
+      }
     } else {
       const localPath = path.isAbsolute(src) ? src : path.resolve(process.cwd(), src);
-      buf = fs.readFileSync(localPath);
+      if (localPath.toLowerCase().endsWith('.svg')) {
+        svgText = fs.readFileSync(localPath, 'utf8');
+      } else {
+        buf = fs.readFileSync(localPath);
+      }
     }
   } catch (err) {
     if (!ignoreInvalid) console.error(`Image load failed for ${src}:`, err.message || err);
     return;
+  }
+
+  if (svgText) {
+    try {
+      const fitTo =
+        width != null
+          ? { mode: 'width', value: Math.max(1, Math.round(width)) }
+          : height != null
+          ? { mode: 'height', value: Math.max(1, Math.round(height)) }
+          : undefined;
+      const resvg = new Resvg(svgText, fitTo ? { fitTo } : undefined);
+      const rendered = resvg.render();
+      buf = Buffer.from(rendered.asPng());
+    } catch (err) {
+      if (!ignoreInvalid) console.error(`Image load failed for ${src}:`, err.message || err);
+      return;
+    }
   }
 
   let intrinsicWidth = null;
@@ -132,12 +172,16 @@ async function renderImage(node, ctx) {
   if (align === 'center') x = layout.x + (layout.contentWidth() - width) / 2;
   else if (align === 'right') x = layout.x + layout.contentWidth() - width;
 
-  try {
-    doc.image(buf, x, layout.y, { width, height });
-    layout.cursorToNextLine(height + 4);
-  } catch (err) {
-    if (!ignoreInvalid) throw err;
+  if (!measureOnly) {
+    try {
+      doc.image(buf, x, layout.y, { width, height });
+    } catch (err) {
+      if (!ignoreInvalid) throw err;
+      return;
+    }
   }
+
+  layout.cursorToNextLine(height + 4);
 }
 
 module.exports = { renderImage };

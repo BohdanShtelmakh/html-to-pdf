@@ -92,6 +92,7 @@ Options:
 - `externalCssTimeoutMs`: HTTP timeout for external CSS (default: `5000`)
 - `allowScripts`: execute scripts in HTML (default: `false`, unsafe)
 - `ignoreInvalidImages`: skip images PDFKit cannot decode (default: `false`)
+- SVG images are rasterized via `@resvg/resvg-js`.
 - `fonts`: optional font paths used to match browser metrics
   - `sansRegular`, `sansBold`, `sansItalic`, `sansBoldItalic`
   - `serifRegular`, `serifBold`, `serifItalic`, `serifBoldItalic`

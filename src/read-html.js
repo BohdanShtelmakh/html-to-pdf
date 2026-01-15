@@ -123,6 +123,7 @@ const NON_COLOR_TOKENS = new Set([
 function isColorToken(token) {
   if (!token) return false;
   const lower = token.toLowerCase();
+  if (lower.startsWith('var(')) return true;
   if (/^#([0-9a-f]{3,8})$/.test(lower)) return true;
   if (/^(rgba?|hsla?)\(.+\)$/.test(lower)) return true;
   if (NON_COLOR_TOKENS.has(lower)) return false;
@@ -134,6 +135,24 @@ function isBorderWidthToken(token) {
   const lower = token.toLowerCase();
   if (['thin', 'medium', 'thick'].includes(lower)) return true;
   return /^-?\d/.test(token);
+}
+
+const BORDER_STYLE_TOKENS = new Set([
+  'none',
+  'hidden',
+  'solid',
+  'dashed',
+  'dotted',
+  'double',
+  'inset',
+  'outset',
+  'ridge',
+  'groove',
+]);
+
+function isBorderStyleToken(token) {
+  if (!token) return false;
+  return BORDER_STYLE_TOKENS.has(token.toLowerCase());
 }
 
 const INHERITABLE = new Set([
@@ -180,9 +199,11 @@ function expandShorthand(decl) {
 
   if (property === 'border' || ['border-top', 'border-right', 'border-bottom', 'border-left'].includes(property)) {
     const width = parts.find((p) => isBorderWidthToken(p));
+    const style = parts.find((p) => isBorderStyleToken(p));
     const color = [...parts].reverse().find((p) => isColorToken(p));
     const side = property === 'border' ? '' : property.replace('border-', '') + '-';
     if (width) push(`border-${side}width`, width);
+    if (style) push(`border-${side}style`, style);
     if (color) push(`border-${side}color`, color);
     return out.length ? out : [decl];
   }
@@ -439,6 +460,9 @@ function getDeclarationBySelector(rules, selector, property) {
 
 function computeStylesForElement(el, rules, parentStyles = {}) {
   const styles = {};
+  for (const [key, val] of Object.entries(parentStyles)) {
+    if (key.startsWith('--')) styles[key] = val;
+  }
 
   const tagName = el.tagName.toLowerCase();
   for (const prop of INHERITABLE) {
@@ -509,7 +533,24 @@ function computeStylesForElement(el, rules, parentStyles = {}) {
     styles['font-size'] = fontSizeValue;
   }
 
+  for (const [prop, value] of Object.entries(styles)) {
+    if (typeof value !== 'string' || !value.includes('var(')) continue;
+    styles[prop] = resolveCssVars(value, styles);
+  }
+
   return styles;
+}
+
+function resolveCssVars(value, styles, depth = 0) {
+  if (depth > 5 || typeof value !== 'string') return value;
+  if (!value.includes('var(')) return value;
+  return value.replace(/var\((--[^,\s)]+)(?:\s*,\s*([^)]+))?\)/g, (_match, name, fallback) => {
+    const raw = styles[name];
+    if (raw == null || raw === '') {
+      return fallback ? resolveCssVars(fallback.trim(), styles, depth + 1) : '';
+    }
+    return resolveCssVars(String(raw), styles, depth + 1);
+  });
 }
 
 function isTextMeaningful(node) {
@@ -589,7 +630,9 @@ async function parseHtmlToObject(
   const root = rootSelector ? document.querySelector(rootSelector) : document.documentElement;
   if (!root) throw new Error(`Root selector "${rootSelector}" not found`);
 
-  const rootStyles = computeStylesForElement(root, rules, {});
+  const docRoot = document.documentElement;
+  const docRootStyles = docRoot ? computeStylesForElement(docRoot, rules, {}) : {};
+  const rootStyles = computeStylesForElement(root, rules, docRootStyles);
 
   const nodes = [];
   for (const child of root.childNodes) {
