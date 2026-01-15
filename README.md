@@ -26,6 +26,7 @@ async function run() {
     loadTimeoutMs: 3000,
     externalCssTimeoutMs: 5000,
     allowScripts: false,
+    ignoreInvalidImages: true,
     fonts: {
       sansRegular: '/path/to/Arial.ttf',
       sansBold: '/path/to/Arial Bold.ttf'
@@ -90,6 +91,7 @@ Options:
 - `loadTimeoutMs`: max wait for external resources (default: `3000`)
 - `externalCssTimeoutMs`: HTTP timeout for external CSS (default: `5000`)
 - `allowScripts`: execute scripts in HTML (default: `false`, unsafe)
+- `ignoreInvalidImages`: skip images PDFKit cannot decode (default: `false`)
 - `fonts`: optional font paths used to match browser metrics
   - `sansRegular`, `sansBold`, `sansItalic`, `sansBoldItalic`
   - `serifRegular`, `serifBold`, `serifItalic`, `serifBoldItalic`

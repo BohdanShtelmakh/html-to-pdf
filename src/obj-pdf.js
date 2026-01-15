@@ -149,7 +149,7 @@ async function makePdf(json, options = {}) {
   registerFonts(doc, options.fonts || {});
 
   const layout = new Layout(doc, { margins: doc.page.margins });
-  await renderNode(json, { doc, layout });
+  await renderNode(json, { doc, layout, options });
   const docDone = new Promise((resolve, reject) => {
     doc.on('end', resolve);
     doc.on('error', reject);

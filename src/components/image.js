@@ -5,6 +5,7 @@ const { mergeStyles, styleNumber, parsePx, textAlign } = require('../pdf/style')
 
 async function renderImage(node, ctx) {
   const { doc, layout } = ctx;
+  const ignoreInvalid = !!ctx?.options?.ignoreInvalidImages;
   const styles = mergeStyles(node);
   let width = styleNumber(styles, 'width', null);
   let height = styleNumber(styles, 'height', null);
@@ -26,12 +27,41 @@ async function renderImage(node, ctx) {
   const widthSpecified = width != null;
   const heightSpecified = height != null;
 
-  const src = node.attrs?.src;
+  const src = node.attrs?.src ? String(node.attrs.src).trim() : null;
   if (!src) return;
 
   let buf;
   try {
-    if (/^https?:\/\//i.test(src)) {
+    if (/^data:image\//i.test(src)) {
+      const commaIndex = src.indexOf(',');
+      if (commaIndex === -1) throw new Error('Invalid data URI');
+      const header = src.slice(5, commaIndex);
+      let payload = src.slice(commaIndex + 1);
+      const parts = header.split(';').filter(Boolean);
+      const mime = (parts.shift() || '').toLowerCase();
+      const isBase64 = parts.some((p) => p.toLowerCase() === 'base64');
+
+      if (payload.includes('%')) {
+        try {
+          payload = decodeURIComponent(payload);
+        } catch {}
+      }
+      payload = payload.replace(/\s+/g, '');
+
+      if (isBase64) {
+        let normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
+        const pad = normalized.length % 4;
+        if (pad) normalized += '='.repeat(4 - pad);
+        buf = Buffer.from(normalized, 'base64');
+      } else {
+        buf = Buffer.from(payload, 'binary');
+      }
+
+      const isPng = buf.length > 8 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47;
+      const isJpeg = buf.length > 2 && buf[0] === 0xff && buf[1] === 0xd8;
+      if (mime.includes('png') && !isPng) throw new Error('Invalid PNG data');
+      if ((mime.includes('jpeg') || mime.includes('jpg')) && !isJpeg) throw new Error('Invalid JPEG data');
+    } else if (/^https?:\/\//i.test(src)) {
       const res = await axios.get(src, { responseType: 'arraybuffer' });
       buf = Buffer.from(res.data);
     } else {
@@ -39,7 +69,7 @@ async function renderImage(node, ctx) {
       buf = fs.readFileSync(localPath);
     }
   } catch (err) {
-    console.error(`Image load failed for ${src}:`, err.message || err);
+    if (!ignoreInvalid) console.error(`Image load failed for ${src}:`, err.message || err);
     return;
   }
 
@@ -102,8 +132,12 @@ async function renderImage(node, ctx) {
   if (align === 'center') x = layout.x + (layout.contentWidth() - width) / 2;
   else if (align === 'right') x = layout.x + layout.contentWidth() - width;
 
-  doc.image(buf, x, layout.y, { width, height });
-  layout.cursorToNextLine(height + 4);
+  try {
+    doc.image(buf, x, layout.y, { width, height });
+    layout.cursorToNextLine(height + 4);
+  } catch (err) {
+    if (!ignoreInvalid) throw err;
+  }
 }
 
 module.exports = { renderImage };
