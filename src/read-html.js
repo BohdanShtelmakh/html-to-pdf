@@ -1,5 +1,4 @@
 const { JSDOM } = require('jsdom');
-const axios = require('axios');
 const css = require('css');
 const fs = require('fs');
 const path = require('path');
@@ -276,8 +275,14 @@ async function collectCssRules(doc, { fetchExternal = true, externalCssTimeoutMs
       try {
         let cssText = '';
         if (/^https?:\/\//i.test(href)) {
-          const res = await axios.get(href, { responseType: 'text', timeout: externalCssTimeoutMs });
-          cssText = res.data || '';
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), externalCssTimeoutMs);
+          try {
+            const res = await fetch(href, { signal: controller.signal });
+            cssText = await res.text();
+          } finally {
+            clearTimeout(timeoutId);
+          }
         } else {
           const localPath = path.isAbsolute(href) ? href : path.resolve(process.cwd(), href);
           cssText = fs.readFileSync(localPath, 'utf8');

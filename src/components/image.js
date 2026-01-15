@@ -1,6 +1,5 @@
 const fs = require('fs');
 const path = require('path');
-const axios = require('axios');
 const { mergeStyles, styleNumber, parsePx, textAlign } = require('../pdf/style');
 
 async function renderImage(node, ctx) {
@@ -62,8 +61,9 @@ async function renderImage(node, ctx) {
       if (mime.includes('png') && !isPng) throw new Error('Invalid PNG data');
       if ((mime.includes('jpeg') || mime.includes('jpg')) && !isJpeg) throw new Error('Invalid JPEG data');
     } else if (/^https?:\/\//i.test(src)) {
-      const res = await axios.get(src, { responseType: 'arraybuffer' });
-      buf = Buffer.from(res.data);
+      const res = await fetch(src);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      buf = Buffer.from(await res.arrayBuffer());
     } else {
       const localPath = path.isAbsolute(src) ? src : path.resolve(process.cwd(), src);
       buf = fs.readFileSync(localPath);
