@@ -1,8 +1,8 @@
 # html-to-pdf
 
-![NPM Version](https://img.shields.io/npm/v/%40bohard%2Fhtml-to-pdf)
-![NPM Downloads](https://img.shields.io/npm/dw/%40bohard%2Fhtml-to-pdf)
-![License](https://img.shields.io/npm/l/%40bohard%2Fhtml-to-pdf)
+[![NPM Version](https://img.shields.io/npm/v/%40bohard%2Fhtml-to-pdf)](https://www.npmjs.com/package/@bohard/html-to-pdf)
+[![NPM Downloads](https://img.shields.io/npm/dw/%40bohard%2Fhtml-to-pdf)](https://www.npmjs.com/package/@bohard/html-to-pdf)
+[![License](https://img.shields.io/npm/l/%40bohard%2Fhtml-to-pdf)](https://github.com/BohdanShtelmakh/html-to-pdf/blob/main/LICENSE)
 
 Generate a PDF from HTML using a lightweight HTML/CSS parser and PDFKit.
 
