@@ -3,6 +3,7 @@ const PDFDocument = require('pdfkit');
 const { Layout } = require('./pdf/layout');
 const { renderNode } = require('./pdf/render-node');
 const { parsePxWithOptions } = require('./pdf/style');
+const { resolveSystemFonts } = require('./fonts');
 
 function registerFonts(doc, fonts = {}) {
   const sansRegular = fonts.sansRegular;
@@ -68,6 +69,24 @@ function registerFonts(doc, fonts = {}) {
     if (hasSerif && !map.serif.italic) map.serif.italic = map.serif.regular;
     if (hasSerif && !map.serif.boldItalic) map.serif.boldItalic = map.serif.bold || map.serif.italic;
     doc._fontMap = map;
+  }
+}
+
+function parseFontFamilies(value) {
+  if (!value) return [];
+  return String(value)
+    .split(',')
+    .map((part) => part.trim().replace(/^['"]|['"]$/g, ''))
+    .filter(Boolean);
+}
+
+function collectFontFamilies(node, out) {
+  if (!node) return;
+  if (node.styles && node.styles['font-family']) {
+    parseFontFamilies(node.styles['font-family']).forEach((f) => out.add(f));
+  }
+  if (node.children) {
+    node.children.forEach((child) => collectFontFamilies(child, out));
   }
 }
 
@@ -155,7 +174,30 @@ async function makePdf(json, options = {}) {
     doc.pipe(outputStream);
   }
 
-  registerFonts(doc, options.fonts || {});
+  const autoResolve = options.autoResolveFonts !== false;
+  const requestedFonts = options.fonts || {};
+  const familySet = new Set();
+  collectFontFamilies(json, familySet);
+  const familyNames = Array.from(familySet);
+
+  const resolved = autoResolve
+    ? resolveSystemFonts(requestedFonts, familyNames)
+    : { fonts: requestedFonts, familyMap: {} };
+  const fontPayload = autoResolve ? resolved.fonts : requestedFonts;
+  const familyMap = autoResolve ? resolved.familyMap : {};
+
+  if (process.env.HTML_TO_PDF_DEBUG_FONTS === '1') {
+    console.log('[font-resolve]', {
+      autoResolve,
+      requestedFonts,
+      effectiveFonts: fontPayload,
+      families: familyNames,
+      familyMap,
+    });
+  }
+
+  if (familyMap && Object.keys(familyMap).length) doc._fontFamilyMap = familyMap;
+  registerFonts(doc, fontPayload);
 
   const layout = new Layout(doc, { margins: doc.page.margins });
   await renderNode(json, { doc, layout, options });

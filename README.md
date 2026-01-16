@@ -27,6 +27,7 @@ async function run() {
     externalCssTimeoutMs: 5000,
     allowScripts: false,
     ignoreInvalidImages: true,
+    autoResolveFonts: true,
     fonts: {
       sansRegular: '/path/to/Arial.ttf',
       sansBold: '/path/to/Arial Bold.ttf'
@@ -92,6 +93,7 @@ Options:
 - `externalCssTimeoutMs`: HTTP timeout for external CSS (default: `5000`)
 - `allowScripts`: execute scripts in HTML (default: `false`, unsafe)
 - `ignoreInvalidImages`: skip images PDFKit cannot decode (default: `false`)
+- `autoResolveFonts`: search system font directories to fill missing font paths and match `font-family` names (default: `true`)
 - SVG images are rasterized via `@resvg/resvg-js`.
 - `fonts`: optional font paths used to match browser metrics
   - `sansRegular`, `sansBold`, `sansItalic`, `sansBoldItalic`

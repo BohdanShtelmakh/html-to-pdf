@@ -1,4 +1,24 @@
 const { BASE_PT, mergeStyles, styleNumber, lineHeightValue, textDecorations, styleColor } = require('./style');
+const { normalizeName } = require('../fonts');
+
+const fontDebugCache = new Set();
+
+function parseFontFamilies(value) {
+  if (!value) return [];
+  return String(value)
+    .split(',')
+    .map((part) => part.trim().replace(/^['"]|['"]$/g, ''))
+    .filter(Boolean);
+}
+
+function pickFamilyFont(family, map, bold, italic) {
+  const entry = map?.[normalizeName(family)];
+  if (!entry) return null;
+  if (bold && italic) return entry.boldItalic || entry.bold || entry.italic || entry.regular || null;
+  if (bold) return entry.bold || entry.regular || entry.boldItalic || entry.italic || null;
+  if (italic) return entry.italic || entry.regular || entry.boldItalic || entry.bold || null;
+  return entry.regular || entry.bold || entry.italic || entry.boldItalic || null;
+}
 
 function selectFontForInline(doc, styles, strong = false, italic = false, sizeOverride = null) {
   const requested = sizeOverride != null ? sizeOverride : styleNumber(styles, 'font-size', BASE_PT);
@@ -8,6 +28,26 @@ function selectFontForInline(doc, styles, strong = false, italic = false, sizeOv
     strong ||
     (!!styles['font-weight'] && (String(styles['font-weight']) >= '600' || String(styles['font-weight']).toLowerCase() === 'bold'));
   const isItalic = italic || (styles['font-style'] || '').toLowerCase() === 'italic';
+
+  const families = parseFontFamilies(styles['font-family']);
+  if (families.length && doc._fontFamilyMap) {
+    for (const family of families) {
+      const matched = pickFamilyFont(family, doc._fontFamilyMap, isBold, isItalic);
+      if (matched) {
+        try {
+          doc.font(matched).fontSize(size);
+          if (process.env.HTML_TO_PDF_DEBUG_FONTS === '1') {
+            const key = `${family}|${isBold ? 'b' : 'n'}${isItalic ? 'i' : 'n'}|${matched}`;
+            if (!fontDebugCache.has(key)) {
+              fontDebugCache.add(key);
+              console.log('[font-pick]', { family, bold: isBold, italic: isItalic, path: matched });
+            }
+          }
+          return;
+        } catch {}
+      }
+    }
+  }
 
   const family = (styles['font-family'] || '').toLowerCase();
   const hasSans = family.includes('sans-serif') || family.includes('sans') || family.includes('arial') || family.includes('helvetica');

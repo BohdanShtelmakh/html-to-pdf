@@ -1,5 +1,3 @@
-const fs = require('fs');
-const path = require('path');
 const { parseHtmlToObject } = require('./read-html');
 const { makePdf } = require('./obj-pdf');
 async function renderPdfFromHtml(html, options = {}) {
