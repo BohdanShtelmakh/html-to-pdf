@@ -119,25 +119,45 @@ function hasMarginStyles(styles) {
 }
 
 async function makePdf(json, options = {}) {
-  const bodyMargins = parseMarginBox(json?.styles, 8);
+  const defaultBodyMargin = parsePxWithOptions('8px', 8);
+  const bodyMargins = parseMarginBox(json?.styles, defaultBodyMargin);
   const pageMargins = hasMarginStyles(json?.page) ? parseMarginBox(json.page, 0) : null;
+  const effectiveMargins = pageMargins
+    ? {
+        top: pageMargins.top + bodyMargins.top,
+        right: pageMargins.right + bodyMargins.right,
+        bottom: pageMargins.bottom + bodyMargins.bottom,
+        left: pageMargins.left + bodyMargins.left,
+      }
+    : bodyMargins;
   const minMargins = {
     top: 6,
     right: 0,
     bottom: 0,
     left: 0,
-  }; // keep a small inset even when CSS margins are zero
+  };
   const buffers = [];
   const doc = new PDFDocument({
     autoFirstPage: true,
     size: 'A4',
     margins: options.margins || {
-      top: Math.max(minMargins.top, (pageMargins || bodyMargins).top ?? minMargins.top),
-      right: Math.max(minMargins.right, (pageMargins || bodyMargins).right ?? minMargins.right),
-      bottom: Math.max(minMargins.bottom, (pageMargins || bodyMargins).bottom ?? minMargins.bottom),
-      left: Math.max(minMargins.left, (pageMargins || bodyMargins).left ?? minMargins.left),
+      top: Math.max(minMargins.top, effectiveMargins.top ?? minMargins.top),
+      right: Math.max(minMargins.right, effectiveMargins.right ?? minMargins.right),
+      bottom: Math.max(minMargins.bottom, effectiveMargins.bottom ?? minMargins.bottom),
+      left: Math.max(minMargins.left, effectiveMargins.left ?? minMargins.left),
     },
   });
+  if (process.env.HTML_TO_PDF_DEBUG === '1') {
+    console.log('[pdf-page]', {
+      size: doc.page.size,
+      pageMargins,
+      bodyMargins,
+      effectiveMargins,
+      docMargins: doc.page.margins,
+      pageWidth: doc.page.width,
+      pageHeight: doc.page.height,
+    });
+  }
   doc.on('data', (data) => {
     buffers.push(data);
   });

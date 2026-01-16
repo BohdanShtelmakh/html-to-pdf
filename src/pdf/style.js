@@ -28,6 +28,10 @@ function tagDefaults(tag) {
       return { size: BASE_PT, mt: 0, mb: em(1), lh: BODY_LH, bold: false };
     case 'table':
       return { size: BASE_PT, mt: em(1), mb: em(1), lh: BODY_LH, bold: false };
+    case 'figure':
+      return { size: BASE_PT, mt: em(1), mb: em(1), lh: BODY_LH, bold: false };
+    case 'figcaption':
+      return { size: BASE_PT, mt: 0, mb: 0, lh: BODY_LH, bold: false };
     case 'div':
     case 'body':
     case 'root':
@@ -127,6 +131,26 @@ function parseColor(val, fallback = '#000000') {
   let s = val.trim();
   const lower = s.toLowerCase();
   if (lower === 'gray' || lower === 'grey') return '#808080';
+  if (lower.startsWith('#')) {
+    const hex = lower.slice(1);
+    if (/^[0-9a-f]{3}$/.test(hex)) {
+      const expanded = hex
+        .split('')
+        .map((c) => c + c)
+        .join('');
+      return `#${expanded}`;
+    }
+    if (/^[0-9a-f]{4}$/.test(hex)) {
+      const expanded = hex
+        .slice(0, 3)
+        .split('')
+        .map((c) => c + c)
+        .join('');
+      return `#${expanded}`;
+    }
+    if (/^[0-9a-f]{6}$/.test(hex)) return `#${hex}`;
+    if (/^[0-9a-f]{8}$/.test(hex)) return `#${hex.slice(0, 6)}`;
+  }
 
   const rgbMatch = s.match(/^rgba?\((.*)\)$/i);
   if (rgbMatch) {

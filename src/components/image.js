@@ -1,7 +1,34 @@
 const fs = require('fs');
 const path = require('path');
-const { mergeStyles, styleNumber, parsePx, textAlign } = require('../pdf/style');
+const { mergeStyles, styleNumber, styleColor, parsePx, textAlign } = require('../pdf/style');
 const { Resvg } = require('@resvg/resvg-js');
+
+function borderInfo(styles) {
+  const border = styles.border ? String(styles.border) : '';
+  const borderWidth = styleNumber(styles, 'border-width', null) ?? (border ? parsePx(border.split(/\s+/)[0], 0) : 0);
+
+  let borderStyle = styles['border-style'] ? String(styles['border-style']).toLowerCase() : '';
+  if (!borderStyle && border) {
+    const styleToken = border
+      .split(/\s+/)
+      .map((p) => p.toLowerCase())
+      .find((p) => ['none', 'solid', 'dashed', 'dotted', 'double'].includes(p));
+    if (styleToken) borderStyle = styleToken;
+  }
+  if (!borderStyle && borderWidth > 0) borderStyle = 'solid';
+
+  let borderColor = styleColor(styles, 'border-color', null);
+  if (!borderColor && border) {
+    const colorToken = border.split(/\s+/).find((p) => p.startsWith('#') || p.startsWith('rgb'));
+    if (colorToken) borderColor = styleColor({ color: colorToken }, 'color', null);
+  }
+
+  const hasBorder = borderWidth > 0 && !['none', 'hidden'].includes(borderStyle || '');
+  return {
+    width: hasBorder ? borderWidth : 0,
+    color: hasBorder ? borderColor || '#000000' : null,
+  };
+}
 
 async function renderImage(node, ctx) {
   const { doc, layout } = ctx;
@@ -10,8 +37,8 @@ async function renderImage(node, ctx) {
   const styles = mergeStyles(node);
   let width = styleNumber(styles, 'width', null);
   let height = styleNumber(styles, 'height', null);
-  const attrWidth = parsePx(node.attrs?.width, null);
-  const attrHeight = parsePx(node.attrs?.height, null);
+  const attrWidth = parseAttrLength(node.attrs?.width);
+  const attrHeight = parseAttrLength(node.attrs?.height);
 
   if ((!width || !height) && node.attrs && typeof node.attrs.style === 'string') {
     const map = {};
@@ -33,6 +60,7 @@ async function renderImage(node, ctx) {
 
   let buf;
   let svgText = null;
+  const debug = process.env.HTML_TO_PDF_DEBUG === '1';
   try {
     if (/^data:image\//i.test(src)) {
       const commaIndex = src.indexOf(',');
@@ -119,6 +147,15 @@ async function renderImage(node, ctx) {
     const img = doc.openImage(buf);
     intrinsicWidth = img?.width || null;
     intrinsicHeight = img?.height || null;
+    if (debug) {
+      console.log('[image-open]', {
+        src: src.slice(0, 64),
+        mime: src.startsWith('data:') ? src.slice(5, src.indexOf(',')) : 'file/http',
+        bufLen: buf ? buf.length : 0,
+        intrinsicWidth,
+        intrinsicHeight,
+      });
+    }
   } catch {}
 
   const maxW = layout.contentWidth();
@@ -128,60 +165,118 @@ async function renderImage(node, ctx) {
   const minW = styleNumber(styles, 'min-width', 0);
   const minH = styleNumber(styles, 'min-height', 0);
   const maxWidthStyle = styleNumber(styles, 'max-width', widthSpecified ? Infinity : maxW);
+  const PX_TO_PT = 72 / 96;
+  const intrinsicWidthPt = intrinsicWidth ? intrinsicWidth * PX_TO_PT : null;
+  const intrinsicHeightPt = intrinsicHeight ? intrinsicHeight * PX_TO_PT : null;
 
   const aspect =
     widthSpecified && heightSpecified
       ? width / height
       : attrWidth && attrHeight
       ? attrWidth / attrHeight
-      : intrinsicWidth && intrinsicHeight
-      ? intrinsicWidth / intrinsicHeight
+      : intrinsicWidthPt && intrinsicHeightPt
+      ? intrinsicWidthPt / intrinsicHeightPt
       : null;
 
   if (!width && !height) {
-    width = Math.min(intrinsicWidth || 400, maxW);
-    height = aspect ? width / aspect : intrinsicHeight ? intrinsicHeight * (width / intrinsicWidth) : width * 0.6;
+    const fallback = 400 * PX_TO_PT;
+    width = Math.min(intrinsicWidthPt || fallback, maxW);
+    height = aspect ? width / aspect : intrinsicHeightPt ? intrinsicHeightPt * (width / intrinsicWidthPt) : width * 0.6;
   } else if (width && !height && aspect) {
     height = width / aspect;
   } else if (height && !width && aspect) {
     width = height * aspect;
   }
 
-  if (!width) width = Math.min(maxW, 300);
+  if (!width) width = Math.min(maxW, 300 * PX_TO_PT);
   if (!height) height = aspect ? width / aspect : width * 0.6;
 
   width = Math.max(minW, Math.min(width, maxWidthStyle));
   height = Math.max(minH, Math.min(height, maxH));
 
-  const shouldCapToContent = !(widthSpecified && heightSpecified);
-  if (shouldCapToContent && width > maxW) {
+  if (width > maxW && maxW > 0) {
     const scale = maxW / width;
     width = maxW;
     height = height * scale;
   }
+  if (height > maxH && Number.isFinite(maxH)) {
+    const scale = maxH / height;
+    height = maxH;
+    width = width * scale;
+  }
 
-  const PX_TO_PT = 72 / 96;
-  width *= PX_TO_PT;
-  height *= PX_TO_PT;
+  if (debug) {
+    console.log('[image-size]', {
+      src: src.slice(0, 64),
+      width,
+      height,
+      maxW,
+      maxH,
+      widthSpecified,
+      heightSpecified,
+    });
+  }
 
-  const estimatedH = height || (width ? width * 0.5 : 120);
+  const border = borderInfo(styles);
+  const totalWidth = width + border.width * 2;
+  const totalHeight = height + border.width * 2;
+
+  const estimatedH = totalHeight || (totalWidth ? totalWidth * 0.5 : 120);
   layout.ensureSpace(estimatedH + 6);
 
   const align = textAlign(styles);
   let x = layout.x;
-  if (align === 'center') x = layout.x + (layout.contentWidth() - width) / 2;
-  else if (align === 'right') x = layout.x + layout.contentWidth() - width;
+  if (align === 'center') x = layout.x + (layout.contentWidth() - totalWidth) / 2;
+  else if (align === 'right') x = layout.x + layout.contentWidth() - totalWidth;
 
   if (!measureOnly) {
     try {
-      doc.image(buf, x, layout.y, { width, height });
+      const objectFit = String(styles['object-fit'] || '').toLowerCase();
+      const imgX = x + border.width;
+      const imgY = layout.y + border.width;
+      if (border.width > 0 && border.color) {
+        const inset = border.width / 2;
+        doc
+          .save()
+          .lineWidth(border.width)
+          .strokeColor(border.color)
+          .rect(x + inset, layout.y + inset, totalWidth - border.width, totalHeight - border.width)
+          .stroke()
+          .restore();
+      }
+      if (objectFit === 'cover') {
+        doc
+          .save()
+          .rect(imgX, imgY, width, height)
+          .clip()
+          .image(buf, imgX, imgY, { cover: [width, height], align: 'center', valign: 'center' })
+          .restore();
+      } else if (objectFit === 'contain') {
+        doc
+          .save()
+          .rect(imgX, imgY, width, height)
+          .clip()
+          .image(buf, imgX, imgY, { fit: [width, height], align: 'center', valign: 'center' })
+          .restore();
+      } else {
+        doc.image(buf, imgX, imgY, { width, height });
+      }
     } catch (err) {
       if (!ignoreInvalid) throw err;
       return;
     }
   }
 
-  layout.cursorToNextLine(height + 4);
+  layout.cursorToNextLine(totalHeight);
+}
+
+function parseAttrLength(value) {
+  if (value == null) return null;
+  if (typeof value === 'number' && Number.isFinite(value)) return value * (72 / 96);
+  const str = String(value).trim();
+  if (!str) return null;
+  if (/^-?\d+(\.\d+)?$/.test(str)) return parseFloat(str) * (72 / 96);
+  return parsePx(str, null);
 }
 
 module.exports = { renderImage };

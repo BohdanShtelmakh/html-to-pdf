@@ -35,6 +35,12 @@ const INLINE_TAGS = new Set([
   'a',
 ]);
 
+function isInlineDisplay(tag, styles = {}) {
+  const display = String(styles.display || '').toLowerCase();
+  if (display === 'inline' || display === 'inline-block') return true;
+  return INLINE_TAGS.has(tag);
+}
+
 function shouldCollapseWhitespace(styles) {
   const ws = String(styles['white-space'] || '')
     .trim()
@@ -64,7 +70,11 @@ function isInlineOnly(node) {
   if (!node || !node.children) return false;
   return (node.children || []).every((child) => {
     if (child.type === 'text') return true;
-    if (child.type === 'element') return INLINE_TAGS.has((child.tag || '').toLowerCase()) && isInlineOnly(child);
+    if (child.type === 'element') {
+      const tag = (child.tag || '').toLowerCase();
+      const styles = mergeStyles(child);
+      return isInlineDisplay(tag, styles) && isInlineOnly(child);
+    }
     return false;
   });
 }
@@ -400,7 +410,7 @@ function collectLineRuns(node, parentStyles = {}) {
     if (tag === 'b' || tag === 'strong') next.bold = true;
     if (tag === 'i' || tag === 'em') next.italic = true;
 
-    const isInline = INLINE_TAGS.has(tag);
+    const isInline = isInlineDisplay(tag, styles);
     if (!isInline && !isRoot) pushLine();
     (n.children || []).forEach((child) => walk(child, next, false));
     if (!isInline && !isRoot) pushLine();
@@ -692,6 +702,7 @@ async function renderFlexRow(children, ctx, { startX, startY, width, gap, rowGap
 async function renderGrid(children, ctx, { startX, startY, width, columns, colGap, rowGap, bottomMargin, alignItems }) {
   const { doc } = ctx;
   const measureOnly = !!ctx?.measureOnly;
+  const debug = process.env.HTML_TO_PDF_DEBUG === '1';
   if (!children.length) return 0;
   const colWidths = Array.isArray(columns) && columns.length
     ? columns.map((w) => Math.max(0, w || 0))
@@ -729,6 +740,17 @@ async function renderGrid(children, ctx, { startX, startY, width, columns, colGa
     measureLayout.atStartOfPage = false;
     await renderNode(child, { doc, layout: measureLayout, options: ctx.options, measureOnly: true });
     const childHeight = Math.max(0, measureLayout.y - rowY);
+    if (debug && !measureOnly) {
+      console.log('[grid-item-measure]', {
+        tag: child.tag,
+        className: child.attrs?.class || '',
+        rowY,
+        colIndex,
+        span,
+        cellWidth,
+        childHeight,
+      });
+    }
 
     currentRow.items.push({ child, x, width: cellWidth, height: childHeight });
     currentRow.height = Math.max(currentRow.height, childHeight);
@@ -761,6 +783,17 @@ async function renderGrid(children, ctx, { startX, startY, width, columns, colGa
         options: ctx.options,
         minHeight: minHeight || undefined,
       });
+      if (debug) {
+        console.log('[grid-item-render]', {
+          tag: item.child.tag,
+          className: item.child.attrs?.class || '',
+          x: item.x,
+          y: item.y,
+          width: item.width,
+          minHeight,
+          childY: childLayout.y,
+        });
+      }
     }
     maxY = Math.max(maxY, row.y + row.height);
   }
@@ -780,7 +813,18 @@ async function renderNode(node, ctx) {
     const text = node.text || '';
     if (!text) return;
     if (!measureOnly) {
-      doc.text(text, { continued: true });
+      const size = BASE_PT;
+      const gap = lineGapFor(size, {}, 'div');
+      selectFontForInline(doc, {}, false, false, size);
+      const h = doc.heightOfString(text, {
+        width: layout.contentWidth(),
+        lineGap: gap,
+      });
+      layout.ensureSpace(h);
+      doc.x = layout.x;
+      doc.y = layout.y;
+      doc.text(text, { width: layout.contentWidth(), lineGap: gap });
+      layout.cursorToNextLine(h);
       return;
     }
     const size = BASE_PT;
@@ -799,6 +843,24 @@ async function renderNode(node, ctx) {
 
   const tag = (node.tag || '').toLowerCase();
   const styles = mergeStyles(node);
+  const display = String(styles.display || '').toLowerCase();
+  if (display === 'none') return;
+  if (process.env.HTML_TO_PDF_DEBUG === '1' && (tag === 'figure' || tag === 'figcaption' || tag === 'img')) {
+    console.log('[node-start]', {
+      tag,
+      display: display || 'block',
+      x: layout.x,
+      y: layout.y,
+      width: layout.contentWidth(),
+      border: styles.border || '',
+      borderWidth: styles['border-width'] || styles['border-top-width'] || '',
+      borderColor: styles['border-color'] || '',
+      padding: styles.padding || '',
+      paddingTop: styles['padding-top'] || '',
+      paddingLeft: styles['padding-left'] || '',
+      margin: styles.margin || '',
+    });
+  }
   const computed = computedMargins(styles, tag);
   const isRoot = node.type === 'root' || tag === 'body';
   const mt = isRoot ? 0 : computed.mt;
@@ -806,6 +868,24 @@ async function renderNode(node, ctx) {
   const finishBlock = layout.newBlock(mt, mb);
   const color = styleColor(styles, 'color', '#000');
   const align = textAlign(styles);
+
+  if (display === 'inline' || display === 'inline-block') {
+    const size = styleNumber(styles, 'font-size', BASE_PT);
+    const gap = lineGapFor(size, styles, tag);
+    const runs = inlineRuns(node);
+    if (!runs.length) return;
+    selectFontForInline(doc, styles, false, false, size);
+    const estimated = doc.heightOfString(runs.map((r) => r.text).join(''), {
+      width: layout.contentWidth(),
+      align,
+      lineGap: gap,
+    });
+    layout.ensureSpace(estimated);
+    const startYInline = layout.y;
+    const h = renderInlineRuns(runs, ctx, { baseStyles: styles, align, lineGap: gap, tag });
+    layout.y = Math.max(layout.y, startYInline + h);
+    return;
+  }
 
   if (tag === 'img') {
     await renderImage(node, ctx);
@@ -1023,7 +1103,7 @@ async function renderNode(node, ctx) {
     return;
   }
 
-  if (tag === 'p' || tag === 'span') {
+  if (tag === 'p' || tag === 'span' || tag === 'figcaption') {
     const size = styleNumber(styles, 'font-size', BASE_PT);
     const gap = lineGapFor(size, styles, tag);
     const runs = inlineRuns(node);
@@ -1109,7 +1189,7 @@ async function renderNode(node, ctx) {
     return;
   }
 
-  if (tag === 'div') {
+  if (tag === 'div' || tag === 'figure') {
     const padding = styleNumber(styles, 'padding', 0);
     const paddingTop = styleNumber(styles, 'padding-top', padding);
     const paddingBottom = styleNumber(styles, 'padding-bottom', padding);
@@ -1160,6 +1240,19 @@ async function renderNode(node, ctx) {
     const contentX = blockX + borderLeft.width + paddingLeft;
     const contentWidth = Math.max(0, blockWidth - borderLeft.width - borderRight.width - paddingLeft - paddingRight);
     const contentStartY = startY + borderTop.width + paddingTop;
+    if (process.env.HTML_TO_PDF_DEBUG === '1' && tag === 'figure') {
+      console.log('[figure-box]', {
+        paddingTop,
+        paddingLeft,
+        paddingRight,
+        borderLeft: borderLeft.width,
+        borderTop: borderTop.width,
+        blockX,
+        contentX,
+        blockWidth,
+        contentWidth,
+      });
+    }
     const hasFrame = bg || borderTop.width || borderRight.width || borderBottom.width || borderLeft.width;
     const prepaint = !measureOnly && hasFrame;
     const inlineOnly = isInlineOnly(node);
