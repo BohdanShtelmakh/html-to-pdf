@@ -127,7 +127,7 @@ async function renderPre(node, ctx, styles) {
   if (!measureOnly) doc.font('Courier').fontSize(fs).fillColor('#000');
 
   const h =
-    doc.heightOfString(codeText.replace(/\n/g, ''), {
+    doc.heightOfString(codeText, {
       width: layout.contentWidth() - padding * 2,
       lineGap,
     }) +

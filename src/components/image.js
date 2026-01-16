@@ -76,7 +76,11 @@ async function renderImage(node, ctx) {
           payload = decodeURIComponent(payload);
         } catch {}
       }
-      payload = payload.replace(/\s+/g, '');
+      if (isBase64) {
+        payload = payload.replace(/\s+/g, '');
+      } else if (!mime.includes('svg')) {
+        payload = payload.replace(/\s+/g, '');
+      }
 
       if (mime.includes('svg')) {
         if (isBase64) {
