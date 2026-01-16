@@ -10,6 +10,9 @@ node_modules/
 # Generated assets
 *.pdf
 *.html
+*.tgz
+debug-inline.svg
+test.js
 tmp/
 temp/
 cache/

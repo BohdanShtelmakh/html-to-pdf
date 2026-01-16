@@ -1,0 +1,12 @@
+.DS_Store
+.git
+.gitignore
+node_modules
+*.pdf
+*.html
+*.tgz
+debug-inline.svg
+test.js
+tmp
+temp
+cache
