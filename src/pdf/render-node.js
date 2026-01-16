@@ -83,6 +83,20 @@ function elementChildren(node) {
   return (node.children || []).filter((child) => child.type === 'element');
 }
 
+function applyPageBreakAfter(styles, ctx, node) {
+  if (!styles || ctx?.measureOnly) return;
+  const value = String(styles['page-break-after'] || '').trim().toLowerCase();
+  const isLast = !!node?._isLastInParent;
+  const parentTag = String(node?._parentTag || '').toLowerCase();
+  if (value === 'always' && !(isLast && (parentTag === 'body' || parentTag === 'root'))) {
+    ctx.layout.doc.addPage();
+    ctx.layout.x = ctx.layout.marginLeft;
+    ctx.layout.y = ctx.layout.marginTop;
+    ctx.layout.pendingBottomMargin = 0;
+    ctx.layout.atStartOfPage = true;
+  }
+}
+
 function escapeXml(value) {
   return String(value)
     .replace(/&/g, '&amp;')
@@ -890,30 +904,35 @@ async function renderNode(node, ctx) {
   if (tag === 'img') {
     await renderImage(node, ctx);
     finishBlock();
+    applyPageBreakAfter(styles, ctx, node);
     return;
   }
 
   if (tag === 'svg') {
     await renderInlineSvg(node, ctx);
     finishBlock();
+    applyPageBreakAfter(styles, ctx, node);
     return;
   }
 
   if (tag === 'table') {
     await renderTable(node, ctx, styles || {});
     finishBlock();
+    applyPageBreakAfter(styles, ctx, node);
     return;
   }
 
   if (tag === 'ul' || tag === 'ol') {
     await renderList(node, ctx, tag === 'ol');
     finishBlock();
+    applyPageBreakAfter(styles, ctx, node);
     return;
   }
 
   if (tag === 'pre' || tag === 'code') {
     await renderPre(node, ctx, styles);
     finishBlock();
+    applyPageBreakAfter(styles, ctx, node);
     return;
   }
 
@@ -1006,6 +1025,7 @@ async function renderNode(node, ctx) {
       }
       layout.y = Math.max(layout.y, startY + boxH);
       finishBlock();
+      applyPageBreakAfter(styles, ctx, node);
       return;
     }
 
@@ -1045,6 +1065,7 @@ async function renderNode(node, ctx) {
     }
 
     finishBlock();
+    applyPageBreakAfter(styles, ctx, node);
     return;
   }
 
@@ -1100,13 +1121,14 @@ async function renderNode(node, ctx) {
 
     layout.y = Math.max(layout.y, startY + totalHeight);
     finishBlock();
+    applyPageBreakAfter(styles, ctx, node);
     return;
   }
 
   if (tag === 'p' || tag === 'span' || tag === 'figcaption') {
     const size = styleNumber(styles, 'font-size', BASE_PT);
     const gap = lineGapFor(size, styles, tag);
-    const runs = inlineRuns(node);
+    const runs = normalizeRuns(inlineRuns(node), shouldCollapseWhitespace(styles));
     const useInlineBoxes = runs.some((run) => runHasInlineBoxStyles(run.styles || {}, styles));
     const plain = runs.map((r) => r.text).join('');
     const letterSpacing = styleNumber(styles, 'letter-spacing', 0, { baseSize: size });
@@ -1186,10 +1208,11 @@ async function renderNode(node, ctx) {
       layout.y = Math.max(layout.y, startY + boxHeight);
     }
     finishBlock();
+    applyPageBreakAfter(styles, ctx, node);
     return;
   }
 
-  if (tag === 'div' || tag === 'figure') {
+  if (tag === 'div' || tag === 'figure' || tag === 'header') {
     const padding = styleNumber(styles, 'padding', 0);
     const paddingTop = styleNumber(styles, 'padding-top', padding);
     const paddingBottom = styleNumber(styles, 'padding-bottom', padding);
@@ -1628,6 +1651,7 @@ async function renderNode(node, ctx) {
     layout.ensureSpace(paddingBottom + borderBottom.width);
     if (paddingBottom || borderBottom.width) layout.cursorToNextLine(paddingBottom + borderBottom.width);
     finishBlock();
+    applyPageBreakAfter(styles, ctx, node);
     return;
   }
 
@@ -1636,6 +1660,7 @@ async function renderNode(node, ctx) {
       await renderNode(child, ctx);
     }
     finishBlock();
+    applyPageBreakAfter(styles, ctx, node);
     return;
   }
 
@@ -1643,6 +1668,7 @@ async function renderNode(node, ctx) {
     await renderNode(child, ctx);
   }
   finishBlock();
+  applyPageBreakAfter(styles, ctx, node);
 }
 
 module.exports = { renderNode };

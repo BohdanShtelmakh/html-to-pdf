@@ -418,6 +418,7 @@ const NON_INHERITED_STYLES = [
 
   'grid',
   'grid-template-columns',
+  'page-break-after',
   'grid-template-rows',
   'grid-template-areas',
   'gap',
@@ -580,6 +581,16 @@ function buildObjectTree(node, rules, parentStyles = {}) {
       const c = buildObjectTree(child, rules, styles);
       if (c) childObjs.push(c);
     }
+    if (childObjs.length) {
+      let lastElementIndex = -1;
+      childObjs.forEach((child, index) => {
+        if (child.type === 'element') lastElementIndex = index;
+      });
+      childObjs.forEach((child, index) => {
+        child._parentTag = tag;
+        child._isLastInParent = child.type === 'element' && index === lastElementIndex;
+      });
+    }
 
     return {
       type: 'element',
@@ -638,6 +649,16 @@ async function parseHtmlToObject(
   for (const child of root.childNodes) {
     const obj = buildObjectTree(child, rules, rootStyles);
     if (obj) nodes.push(obj);
+  }
+  if (nodes.length) {
+    let lastElementIndex = -1;
+    nodes.forEach((node, index) => {
+      if (node.type === 'element') lastElementIndex = index;
+    });
+    nodes.forEach((node, index) => {
+      node._parentTag = root.tagName?.toLowerCase?.() || 'root';
+      node._isLastInParent = node.type === 'element' && index === lastElementIndex;
+    });
   }
 
   return {

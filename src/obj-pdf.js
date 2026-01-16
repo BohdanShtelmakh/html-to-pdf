@@ -147,17 +147,6 @@ async function makePdf(json, options = {}) {
       left: Math.max(minMargins.left, effectiveMargins.left ?? minMargins.left),
     },
   });
-  if (process.env.HTML_TO_PDF_DEBUG === '1') {
-    console.log('[pdf-page]', {
-      size: doc.page.size,
-      pageMargins,
-      bodyMargins,
-      effectiveMargins,
-      docMargins: doc.page.margins,
-      pageWidth: doc.page.width,
-      pageHeight: doc.page.height,
-    });
-  }
   doc.on('data', (data) => {
     buffers.push(data);
   });
