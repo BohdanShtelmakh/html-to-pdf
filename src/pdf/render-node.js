@@ -85,7 +85,9 @@ function elementChildren(node) {
 
 function applyPageBreakAfter(styles, ctx, node) {
   if (!styles || ctx?.measureOnly) return;
-  const value = String(styles['page-break-after'] || '').trim().toLowerCase();
+  const value = String(styles['page-break-after'] || '')
+    .trim()
+    .toLowerCase();
   const isLast = !!node?._isLastInParent;
   const parentTag = String(node?._parentTag || '').toLowerCase();
   if (value === 'always' && !(isLast && (parentTag === 'body' || parentTag === 'root'))) {
@@ -106,17 +108,51 @@ function escapeXml(value) {
     .replace(/'/g, '&#39;');
 }
 
-function serializeSvg(node) {
+function normalizeSvgAttrName(name) {
+  const key = String(name || '');
+  const lower = key.toLowerCase();
+  const map = {
+    viewbox: 'viewBox',
+    preserveaspectratio: 'preserveAspectRatio',
+    gradientunits: 'gradientUnits',
+    gradienttransform: 'gradientTransform',
+    spreadmethod: 'spreadMethod',
+    patternunits: 'patternUnits',
+    patterncontentunits: 'patternContentUnits',
+    patterntransform: 'patternTransform',
+    clippathunits: 'clipPathUnits',
+  };
+  return map[lower] || key;
+}
+
+function normalizeSvgTagName(tag) {
+  const key = String(tag || '');
+  const lower = key.toLowerCase();
+  const map = {
+    lineargradient: 'linearGradient',
+    radialgradient: 'radialGradient',
+    clippath: 'clipPath',
+    foreignobject: 'foreignObject',
+    textpath: 'textPath',
+  };
+  return map[lower] || key;
+}
+
+function serializeSvg(node, inSvg = false) {
   if (!node) return '';
   if (node.type === 'text') return escapeXml(node.text || '');
   if (node.type !== 'element') return '';
-  const tag = node.tag || '';
+  const rawTag = node.tag || '';
+  const nextInSvg = inSvg || rawTag.toLowerCase() === 'svg';
+  const tag = nextInSvg ? normalizeSvgTagName(rawTag) : rawTag;
   const attrs = node.attrs || {};
-  const attrString = Object.entries(attrs)
-    .map(([k, v]) => `${k}="${escapeXml(v)}"`)
-    .join(' ');
+  const attrEntries = Object.entries(attrs).map(([k, v]) => [nextInSvg ? normalizeSvgAttrName(k) : k, v]);
+  if (tag.toLowerCase() === 'svg' && !('xmlns' in attrs)) {
+    attrEntries.push(['xmlns', 'http://www.w3.org/2000/svg']);
+  }
+  const attrString = attrEntries.map(([k, v]) => `${k}="${escapeXml(v)}"`).join(' ');
   const open = attrString ? `<${tag} ${attrString}>` : `<${tag}>`;
-  const children = (node.children || []).map(serializeSvg).join('');
+  const children = (node.children || []).map((child) => serializeSvg(child, nextInSvg)).join('');
   return `${open}${children}</${tag}>`;
 }
 
@@ -440,6 +476,13 @@ async function renderInlineSvg(node, ctx) {
   const measureOnly = !!ctx?.measureOnly;
   const ignoreInvalid = !!ctx?.options?.ignoreInvalidImages;
   const styles = mergeStyles(node);
+  const borderWidth = styleNumber(styles, 'border-width', 0);
+  const borderStyle = String(styles['border-style'] || '')
+    .trim()
+    .toLowerCase();
+  const borderColor = styleColor(styles, 'border-color', '#333333');
+  const borderPaint = ['none', 'transparent'].includes(String(borderColor).trim().toLowerCase()) ? null : borderColor;
+  const hasBorder = borderWidth > 0 && borderPaint && !['none', 'hidden'].includes(borderStyle);
   let width = styleNumber(styles, 'width', null, { percentBase: layout.contentWidth() });
   let height = styleNumber(styles, 'height', null);
   const attrWidth = parseAttrDimension(node.attrs?.width);
@@ -489,44 +532,71 @@ async function renderInlineSvg(node, ctx) {
   }
 
   const svgScale = Number.isFinite(ctx?.options?.svgScale) ? ctx.options.svgScale : 2;
+  const svgDpi = Number.isFinite(ctx?.options?.svgDpi) ? ctx.options.svgDpi : 72;
   const renderScale = svgScale > 0 ? svgScale : 1;
   const widthPx = Math.max(1, Math.round((width / PX_TO_PT) * renderScale));
   const heightPx = Math.max(1, Math.round((height / PX_TO_PT) * renderScale));
   const svgText = serializeSvg(node);
-
-  let buf;
-  try {
-    const fitTo =
-      widthPx > 0 ? { mode: 'width', value: widthPx } : heightPx > 0 ? { mode: 'height', value: heightPx } : undefined;
-    const resvg = new Resvg(svgText, {
-      imageRendering: 0,
-      textRendering: 2,
-      shapeRendering: 2,
-      dpi: 196,
-      ...(fitTo ? { fitTo } : undefined),
-    });
-    buf = Buffer.from(resvg.render().asPng());
-  } catch (err) {
-    if (!ignoreInvalid) console.error('Inline SVG render failed:', err.message || err);
-    return;
+  if (process.env.HTML_TO_PDF_DEBUG_SVG) {
+    const fs = require('fs');
+    const debugPath = process.env.HTML_TO_PDF_DEBUG_SVG;
+    fs.writeFileSync(debugPath, svgText);
   }
 
-  layout.ensureSpace(height + 6);
+  let buf;
+  if (!measureOnly) {
+    try {
+      const fitTo =
+        widthPx > 0
+          ? { mode: 'width', value: widthPx }
+          : heightPx > 0
+          ? { mode: 'height', value: heightPx }
+          : undefined;
+      const resvg = new Resvg(svgText, {
+        imageRendering: 0,
+        textRendering: 2,
+        shapeRendering: 2,
+        dpi: svgDpi,
+        ...(fitTo ? { fitTo } : undefined),
+      });
+      buf = Buffer.from(resvg.render().asPng());
+    } catch (err) {
+      if (!ignoreInvalid) console.error('Inline SVG render failed:', err.message || err);
+      return;
+    }
+  }
+
+  const totalWidth = width + (hasBorder ? borderWidth * 2 : 0);
+  const totalHeight = height + (hasBorder ? borderWidth * 2 : 0);
+  layout.ensureSpace(totalHeight);
   const align = textAlign(styles);
   let x = layout.x;
-  if (align === 'center') x = layout.x + (layout.contentWidth() - width) / 2;
-  else if (align === 'right') x = layout.x + layout.contentWidth() - width;
+  if (align === 'center') x = layout.x + (layout.contentWidth() - totalWidth) / 2;
+  else if (align === 'right') x = layout.x + layout.contentWidth() - totalWidth;
 
   if (!measureOnly) {
     try {
-      doc.image(buf, x, layout.y, { width, height });
+      const imgX = x + (hasBorder ? borderWidth : 0);
+      const imgY = layout.y + (hasBorder ? borderWidth : 0);
+      if (hasBorder) {
+        const inset = borderWidth / 2;
+        doc.save().lineWidth(borderWidth).strokeColor(borderPaint);
+        if (borderStyle === 'dashed') {
+          doc.dash(borderWidth * 2, { space: borderWidth * 2 });
+        } else if (borderStyle === 'dotted') {
+          doc.dash(borderWidth, { space: borderWidth });
+        }
+        doc.rect(x + inset, layout.y + inset, totalWidth - borderWidth, totalHeight - borderWidth).stroke();
+        doc.undash().restore();
+      }
+      doc.image(buf, imgX, imgY, { width, height });
     } catch (err) {
       if (!ignoreInvalid) throw err;
       return;
     }
   }
 
-  layout.cursorToNextLine(height + 4);
+  layout.cursorToNextLine(totalHeight);
 }
 
 function measureLineWidth(line, doc) {
@@ -718,11 +788,12 @@ async function renderGrid(children, ctx, { startX, startY, width, columns, colGa
   const measureOnly = !!ctx?.measureOnly;
   const debug = process.env.HTML_TO_PDF_DEBUG === '1';
   if (!children.length) return 0;
-  const colWidths = Array.isArray(columns) && columns.length
-    ? columns.map((w) => Math.max(0, w || 0))
-    : Array.from({ length: Math.max(1, columns || 1) }, () =>
-        Math.max(0, (width - colGap * (Math.max(1, columns || 1) - 1)) / Math.max(1, columns || 1))
-      );
+  const colWidths =
+    Array.isArray(columns) && columns.length
+      ? columns.map((w) => Math.max(0, w || 0))
+      : Array.from({ length: Math.max(1, columns || 1) }, () =>
+          Math.max(0, (width - colGap * (Math.max(1, columns || 1) - 1)) / Math.max(1, columns || 1))
+        );
   const cols = colWidths.length;
   const rows = [];
   let colIndex = 0;
@@ -739,12 +810,8 @@ async function renderGrid(children, ctx, { startX, startY, width, columns, colGa
       currentRow = { y: rowY, height: 0, items: [] };
     }
 
-    const cellWidth =
-      colWidths.slice(colIndex, colIndex + span).reduce((sum, w) => sum + w, 0) + colGap * (span - 1);
-    const x =
-      startX +
-      colWidths.slice(0, colIndex).reduce((sum, w) => sum + w, 0) +
-      colGap * colIndex;
+    const cellWidth = colWidths.slice(colIndex, colIndex + span).reduce((sum, w) => sum + w, 0) + colGap * (span - 1);
+    const x = startX + colWidths.slice(0, colIndex).reduce((sum, w) => sum + w, 0) + colGap * colIndex;
 
     const right = doc.page.width - (x + cellWidth);
     const measureLayout = new Layout(doc, {
@@ -776,8 +843,7 @@ async function renderGrid(children, ctx, { startX, startY, width, columns, colGa
   }
 
   const align = String(alignItems || 'stretch').toLowerCase();
-  const totalHeight =
-    rows.reduce((sum, row) => sum + row.height, 0) + Math.max(0, rows.length - 1) * rowGap;
+  const totalHeight = rows.reduce((sum, row) => sum + row.height, 0) + Math.max(0, rows.length - 1) * rowGap;
 
   if (measureOnly) return totalHeight;
 
@@ -1315,9 +1381,9 @@ async function renderNode(node, ctx) {
           measureOnly: true,
         });
         measureLayout.atStartOfPage = false;
-      for (const child of node.children || []) {
-        await renderNode(child, { doc, layout: measureLayout, options: ctx.options, measureOnly: true });
-      }
+        for (const child of node.children || []) {
+          await renderNode(child, { doc, layout: measureLayout, options: ctx.options, measureOnly: true });
+        }
         measuredContent = Math.max(0, measureLayout.y - contentStartY);
       }
 
@@ -1465,9 +1531,9 @@ async function renderNode(node, ctx) {
 
       layout.y = Math.max(layout.y, contentStartY + usedHeight);
     } else {
-    if (inlineOnly) {
-      const size = styleNumber(styles, 'font-size', BASE_PT);
-      const gap = lineGapFor(size, styles, tag);
+      if (inlineOnly) {
+        const size = styleNumber(styles, 'font-size', BASE_PT);
+        const gap = lineGapFor(size, styles, tag);
         const runs = inlineRuns(node);
         const useInlineBoxes = runs.some((run) => runHasInlineBoxStyles(run.styles || {}, styles));
         const hasFrame =
