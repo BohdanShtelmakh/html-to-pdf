@@ -103,13 +103,18 @@ function pickFont(fonts, families, { bold = false, italic = false, allowFallback
   const familyNorms = families.map(normalizeName);
   let best = null;
   let bestScore = -Infinity;
+  const debug = process.env.HTML_TO_PDF_DEBUG_FONTS === '1';
 
   for (const font of fonts) {
     if (!isFontSupported(font.path)) continue;
     for (let i = 0; i < familyNorms.length; i++) {
       const fam = familyNorms[i];
       if (!fam || (!font.nameNorm.includes(fam) && !font.familyNorm.includes(fam))) continue;
+      const exactMatch = font.nameNorm === fam || font.familyNorm === fam;
+      const isNarrow = /narrow|condensed/.test(font.nameNorm);
       let score = 100 - i * 5;
+      if (exactMatch) score += 15;
+      if (isNarrow) score -= 8;
       score += bold ? (font.isBold ? 20 : -20) : font.isBold ? -10 : 5;
       score += italic ? (font.isItalic ? 20 : -20) : font.isItalic ? -10 : 5;
       if (bold && italic && font.isBold && font.isItalic) score += 10;
