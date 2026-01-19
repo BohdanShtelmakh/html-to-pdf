@@ -153,64 +153,19 @@ function buildFamilyMap(fonts, familyNames) {
   return out;
 }
 
-function resolveSystemFonts(requested = {}, familyNames = []) {
+function resolveSystemFonts(familyNames = []) {
   const fonts = collectSystemFonts();
-  if (!fonts.length) return { fonts: { ...requested }, familyMap: {} };
-
-  const sansFamilies = [
-    'Arial',
-    'Helvetica',
-    'DejaVu Sans',
-    'Liberation Sans',
-    'Noto Sans',
-    'Fira Sans',
-    'Open Sans',
-    'Ubuntu',
-    'Verdana',
-    'Tahoma',
-  ];
-  const serifFamilies = [
-    'Times New Roman',
-    'Times',
-    'DejaVu Serif',
-    'Liberation Serif',
-    'Noto Serif',
-    'Georgia',
-  ];
-
-  const resolvedFonts = {
-    ...requested,
-    sansRegular:
-      requested.sansRegular || pickFont(fonts, sansFamilies, { bold: false, italic: false }) || requested.sansRegular,
-    sansBold: requested.sansBold || pickFont(fonts, sansFamilies, { bold: true, italic: false }) || requested.sansBold,
-    sansItalic:
-      requested.sansItalic || pickFont(fonts, sansFamilies, { bold: false, italic: true }) || requested.sansItalic,
-    sansBoldItalic:
-      requested.sansBoldItalic ||
-      pickFont(fonts, sansFamilies, { bold: true, italic: true }) ||
-      requested.sansBoldItalic,
-    serifRegular:
-      requested.serifRegular ||
-      pickFont(fonts, serifFamilies, { bold: false, italic: false }) ||
-      requested.serifRegular,
-    serifBold:
-      requested.serifBold || pickFont(fonts, serifFamilies, { bold: true, italic: false }) || requested.serifBold,
-    serifItalic:
-      requested.serifItalic || pickFont(fonts, serifFamilies, { bold: false, italic: true }) || requested.serifItalic,
-    serifBoldItalic:
-      requested.serifBoldItalic ||
-      pickFont(fonts, serifFamilies, { bold: true, italic: true }) ||
-      requested.serifBoldItalic,
-  };
+  if (!fonts.length) return { familyMap: {} };
 
   const resolvedFamilies = buildFamilyMap(fonts, familyNames);
+
   if (process.env.HTML_TO_PDF_DEBUG_FONTS === '1') {
     const missing = familyNames.filter((f) => !resolvedFamilies[normalizeName(f)]);
     if (missing.length) {
       console.log('[font-missing-families]', missing);
     }
   }
-  return { fonts: resolvedFonts, familyMap: resolvedFamilies };
+  return { familyMap: resolvedFamilies };
 }
 
 module.exports = { resolveSystemFonts, normalizeName };

@@ -53,19 +53,10 @@ function selectFontForInline(doc, styles, strong = false, italic = false, sizeOv
   const hasSans = family.includes('sans-serif') || family.includes('sans') || family.includes('arial') || family.includes('helvetica');
   const hasSerif = family.includes('serif') || family.includes('times');
   const wantsSans = hasSans || (family && !hasSerif);
-
-  const custom = doc._fontMap && (wantsSans ? doc._fontMap.sans : doc._fontMap.serif);
   let fontName = wantsSans ? 'Helvetica' : 'Times-Roman';
-  if (custom && custom.regular) {
-    if (isBold && isItalic && custom.boldItalic) fontName = custom.boldItalic;
-    else if (isBold && custom.bold) fontName = custom.bold;
-    else if (isItalic && custom.italic) fontName = custom.italic;
-    else fontName = custom.regular;
-  } else {
-    if (isBold && isItalic) fontName = wantsSans ? 'Helvetica-BoldOblique' : 'Times-BoldItalic';
-    else if (isBold) fontName = wantsSans ? 'Helvetica-Bold' : 'Times-Bold';
-    else if (isItalic) fontName = wantsSans ? 'Helvetica-Oblique' : 'Times-Italic';
-  }
+  if (isBold && isItalic) fontName = wantsSans ? 'Helvetica-BoldOblique' : 'Times-BoldItalic';
+  else if (isBold) fontName = wantsSans ? 'Helvetica-Bold' : 'Times-Bold';
+  else if (isItalic) fontName = wantsSans ? 'Helvetica-Oblique' : 'Times-Italic';
 
   doc.font(fontName).fontSize(size);
 }

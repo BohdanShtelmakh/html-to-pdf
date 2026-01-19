@@ -29,8 +29,10 @@ async function run() {
     ignoreInvalidImages: true,
     autoResolveFonts: true,
     fonts: {
-      sansRegular: '/path/to/Arial.ttf',
-      sansBold: '/path/to/Arial Bold.ttf'
+      Helvetica: {
+        regular: '/path/to/Helvetica-Regular.ttf',
+        bold: '/path/to/Helvetica-Bold.ttf'
+      }
     }
   });
 
@@ -93,11 +95,14 @@ Options:
 - `externalCssTimeoutMs`: HTTP timeout for external CSS (default: `5000`)
 - `allowScripts`: execute scripts in HTML (default: `false`, unsafe)
 - `ignoreInvalidImages`: skip images PDFKit cannot decode (default: `false`)
-- `autoResolveFonts`: search system font directories to fill missing font paths and match `font-family` names (default: `true`). If all default font slots are provided, the scan is skipped.
+- `autoResolveFonts`: search system font directories and match `font-family` names (default: `true`)
+- `margins`: override PDF page margins (points, all optional)
+- `svgScale`: raster scale for inline SVGs (default: `2`)
+- `svgDpi`: raster DPI for inline SVGs (default: `72`)
 - SVG images are rasterized via `@resvg/resvg-js`.
-- `fonts`: optional font paths used to match browser metrics
-  - `sansRegular`, `sansBold`, `sansItalic`, `sansBoldItalic`
-  - `serifRegular`, `serifBold`, `serifItalic`, `serifBoldItalic`
+- `fonts`: optional font paths used to match browser metrics (per-family overrides)
+  - `fonts.Helvetica = "/path/to/Helvetica-Regular.ttf"` (uses the same file for all variants)
+  - `fonts.Helvetica = { regular, bold, italic, boldItalic }` (variant-specific files)
 
 ## Security
 
@@ -115,10 +120,7 @@ npm test
 
 ## Fonts
 
-You can supply custom font paths via the `fonts` option:
-
-- `sansRegular`, `sansBold`, `sansItalic`, `sansBoldItalic`
-- `serifRegular`, `serifBold`, `serifItalic`, `serifBoldItalic`
+You can supply custom font paths via the `fonts` option (per-family mapping).
 
 ## License
 

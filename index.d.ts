@@ -1,12 +1,8 @@
-export interface FontPaths {
-  sansRegular?: string;
-  sansBold?: string;
-  sansItalic?: string;
-  sansBoldItalic?: string;
-  serifRegular?: string;
-  serifBold?: string;
-  serifItalic?: string;
-  serifBoldItalic?: string;
+export interface FontFamilyPaths {
+  regular?: string;
+  bold?: string;
+  italic?: string;
+  boldItalic?: string;
 }
 
 export interface RenderOptions {
@@ -17,7 +13,15 @@ export interface RenderOptions {
   allowScripts?: boolean;
   ignoreInvalidImages?: boolean;
   autoResolveFonts?: boolean;
-  fonts?: FontPaths;
+  margins?: {
+    top?: number;
+    right?: number;
+    bottom?: number;
+    left?: number;
+  };
+  svgScale?: number;
+  svgDpi?: number;
+  fonts?: Record<string, string | FontFamilyPaths>;
 }
 
 export function renderPdfFromHtml(html: string, options?: RenderOptions): Promise<Buffer>;

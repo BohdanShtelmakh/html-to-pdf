@@ -5,73 +5,6 @@ const { renderNode } = require('./pdf/render-node');
 const { parsePxWithOptions } = require('./pdf/style');
 const { resolveSystemFonts } = require('./fonts');
 
-function registerFonts(doc, fonts = {}) {
-  const sansRegular = fonts.sansRegular;
-  const sansBold = fonts.sansBold;
-  const sansItalic = fonts.sansItalic;
-  const sansBoldItalic = fonts.sansBoldItalic;
-  const serifRegular = fonts.serifRegular;
-  const serifBold = fonts.serifBold;
-  const serifItalic = fonts.serifItalic;
-  const serifBoldItalic = fonts.serifBoldItalic;
-
-  const map = { sans: {}, serif: {} };
-  let hasSans = false;
-  let hasSerif = false;
-
-  if (sansRegular) {
-    doc.registerFont('CustomSans', sansRegular);
-    map.sans.regular = 'CustomSans';
-    hasSans = true;
-  }
-  if (sansBold) {
-    doc.registerFont('CustomSans-Bold', sansBold);
-    map.sans.bold = 'CustomSans-Bold';
-    hasSans = true;
-  }
-  if (sansItalic) {
-    doc.registerFont('CustomSans-Italic', sansItalic);
-    map.sans.italic = 'CustomSans-Italic';
-    hasSans = true;
-  }
-  if (sansBoldItalic) {
-    doc.registerFont('CustomSans-BoldItalic', sansBoldItalic);
-    map.sans.boldItalic = 'CustomSans-BoldItalic';
-    hasSans = true;
-  }
-
-  if (serifRegular) {
-    doc.registerFont('CustomSerif', serifRegular);
-    map.serif.regular = 'CustomSerif';
-    hasSerif = true;
-  }
-  if (serifBold) {
-    doc.registerFont('CustomSerif-Bold', serifBold);
-    map.serif.bold = 'CustomSerif-Bold';
-    hasSerif = true;
-  }
-  if (serifItalic) {
-    doc.registerFont('CustomSerif-Italic', serifItalic);
-    map.serif.italic = 'CustomSerif-Italic';
-    hasSerif = true;
-  }
-  if (serifBoldItalic) {
-    doc.registerFont('CustomSerif-BoldItalic', serifBoldItalic);
-    map.serif.boldItalic = 'CustomSerif-BoldItalic';
-    hasSerif = true;
-  }
-
-  if (hasSans || hasSerif) {
-    if (hasSans && !map.sans.bold) map.sans.bold = map.sans.regular;
-    if (hasSans && !map.sans.italic) map.sans.italic = map.sans.regular;
-    if (hasSans && !map.sans.boldItalic) map.sans.boldItalic = map.sans.bold || map.sans.italic;
-    if (hasSerif && !map.serif.bold) map.serif.bold = map.serif.regular;
-    if (hasSerif && !map.serif.italic) map.serif.italic = map.serif.regular;
-    if (hasSerif && !map.serif.boldItalic) map.serif.boldItalic = map.serif.bold || map.serif.italic;
-    doc._fontMap = map;
-  }
-}
-
 function parseFontFamilies(value) {
   if (!value) return [];
   return String(value)
@@ -137,6 +70,21 @@ function hasMarginStyles(styles) {
   );
 }
 
+function normalizeFamilyEntry(value) {
+  if (!value) return null;
+  if (typeof value === 'string') {
+    return { regular: value, bold: value, italic: value, boldItalic: value };
+  }
+  if (typeof value !== 'object') return null;
+  const regular = value.regular || value.bold || value.italic || value.boldItalic || null;
+  return {
+    regular,
+    bold: value.bold || regular,
+    italic: value.italic || regular,
+    boldItalic: value.boldItalic || value.bold || value.italic || regular,
+  };
+}
+
 async function makePdf(json, options = {}) {
   const defaultBodyMargin = parsePxWithOptions('8px', 8);
   const bodyMargins = parseMarginBox(json?.styles, defaultBodyMargin);
@@ -176,38 +124,34 @@ async function makePdf(json, options = {}) {
 
   const autoResolve = options.autoResolveFonts !== false;
   const requestedFonts = options.fonts || {};
+  const familyOverrides = {};
+  for (const [key, value] of Object.entries(requestedFonts)) {
+    const normalized = normalizeFamilyEntry(value);
+    if (normalized) familyOverrides[key] = normalized;
+  }
   const familySet = new Set();
   collectFontFamilies(json, familySet);
   const familyNames = Array.from(familySet);
 
-  const hasAllDefaults =
-    !!requestedFonts.sansRegular &&
-    !!requestedFonts.sansBold &&
-    !!requestedFonts.sansItalic &&
-    !!requestedFonts.sansBoldItalic &&
-    !!requestedFonts.serifRegular &&
-    !!requestedFonts.serifBold &&
-    !!requestedFonts.serifItalic &&
-    !!requestedFonts.serifBoldItalic;
-
-  const resolved = autoResolve && !hasAllDefaults
-    ? resolveSystemFonts(requestedFonts, familyNames)
-    : { fonts: requestedFonts, familyMap: {} };
-  const fontPayload = autoResolve ? resolved.fonts : requestedFonts;
-  const familyMap = autoResolve ? resolved.familyMap : {};
+  const resolved = autoResolve ? resolveSystemFonts(familyNames) : { familyMap: {} };
+  const familyMap = {
+    ...(autoResolve ? resolved.familyMap : {}),
+    ...Object.keys(familyOverrides).reduce((out, key) => {
+      out[key] = familyOverrides[key];
+      return out;
+    }, {}),
+  };
 
   if (process.env.HTML_TO_PDF_DEBUG_FONTS === '1') {
     console.log('[font-resolve]', {
       autoResolve,
       requestedFonts,
-      effectiveFonts: fontPayload,
       families: familyNames,
       familyMap,
     });
   }
 
   if (familyMap && Object.keys(familyMap).length) doc._fontFamilyMap = familyMap;
-  registerFonts(doc, fontPayload);
 
   const layout = new Layout(doc, { margins: doc.page.margins });
   await renderNode(json, { doc, layout, options });
