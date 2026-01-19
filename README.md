@@ -122,6 +122,18 @@ npm test
 
 You can supply custom font paths via the `fonts` option (per-family mapping).
 
+- Glyph coverage depends on the font files you provide. Emoji and CJK characters require fonts that include those glyphs.
+
+## 💛 Support
+
+This project is free and open-source.
+
+If it helped you, you can support development:
+- 🇺🇦 / 🌍 Monobank jar: https://send.monobank.ua/jar/3WznEHehpC
+
+Monobank jar accepts international cards (Apple Pay / Google Pay).
+A small processing fee may apply for non-Ukrainian cards.
+
 ## License
 
 MIT
