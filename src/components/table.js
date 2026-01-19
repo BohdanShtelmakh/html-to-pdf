@@ -35,18 +35,46 @@ function resolveBorder(cellStyles, rowStyles, tableStyles) {
     normalizePaint(styleColor(rowStyles || {}, 'border-color', null)) ||
     normalizePaint(styleColor(tableStyles || {}, 'border-color', null));
 
+  const borderBottomStyle = String(
+    (cellStyles && cellStyles['border-bottom-style']) ||
+      (rowStyles && rowStyles['border-bottom-style']) ||
+      (tableStyles && tableStyles['border-bottom-style']) ||
+      borderStyle
+  )
+    .trim()
+    .toLowerCase();
+  let borderBottomWidth =
+    styleNumber(cellStyles || {}, 'border-bottom-width', null) ??
+    styleNumber(rowStyles || {}, 'border-bottom-width', null) ??
+    styleNumber(tableStyles || {}, 'border-bottom-width', null) ??
+    0;
+  const borderBottomColor =
+    normalizePaint(styleColor(cellStyles || {}, 'border-bottom-color', null)) ||
+    normalizePaint(styleColor(rowStyles || {}, 'border-bottom-color', null)) ||
+    normalizePaint(styleColor(tableStyles || {}, 'border-bottom-color', null)) ||
+    borderColor;
+
   if (borderStyle === 'none' || borderStyle === 'hidden' || !borderColor) borderWidth = 0;
-  return { borderWidth, borderColor };
+  if (borderBottomStyle === 'none' || borderBottomStyle === 'hidden' || !borderBottomColor) {
+    borderBottomWidth = 0;
+  }
+
+  return { borderWidth, borderColor, borderBottomWidth, borderBottomColor, borderBottomStyle };
 }
 
 async function renderTable(node, ctx, tableStyles = {}) {
   const { doc, layout } = ctx;
   const measureOnly = !!ctx?.measureOnly;
 
-  const tbody = (node.children || []).find((c) => c.type === 'element' && c.tag === 'tbody');
-  if (!tbody) return;
+  const tableChildren = node.children || [];
+  const head = tableChildren.find((c) => c.type === 'element' && c.tag === 'thead');
+  const body = tableChildren.find((c) => c.type === 'element' && c.tag === 'tbody');
+  const foot = tableChildren.find((c) => c.type === 'element' && c.tag === 'tfoot');
 
-  const rows = (tbody.children || []).filter((r) => r.type === 'element' && r.tag === 'tr');
+  const headRows = head ? (head.children || []).filter((r) => r.type === 'element' && r.tag === 'tr') : [];
+  const bodyRows = body ? (body.children || []).filter((r) => r.type === 'element' && r.tag === 'tr') : [];
+  const footRows = foot ? (foot.children || []).filter((r) => r.type === 'element' && r.tag === 'tr') : [];
+  const rows = [...headRows, ...bodyRows, ...footRows];
   if (!rows.length) return;
 
   let cols = 0;
@@ -130,7 +158,11 @@ async function renderTable(node, ctx, tableStyles = {}) {
       const y = layout.y;
       const cellStyles = cell.styles || {};
       const bg = resolveBackground(cellStyles, rowStyles, tableStyles);
-      const { borderWidth, borderColor } = resolveBorder(cellStyles, rowStyles, tableStyles);
+      const { borderWidth, borderColor, borderBottomWidth, borderBottomColor, borderBottomStyle } = resolveBorder(
+        cellStyles,
+        rowStyles,
+        tableStyles
+      );
       if (!measureOnly) {
         if (bg) {
           doc.save().rect(x, y, spanWidth, rowHeight).fill(bg).restore();
@@ -143,6 +175,16 @@ async function renderTable(node, ctx, tableStyles = {}) {
             .rect(x, y, spanWidth, rowHeight)
             .stroke()
             .restore();
+        } else if (borderBottomWidth > 0) {
+          doc.save().lineWidth(borderBottomWidth).strokeColor(borderBottomColor || '#000');
+          if (borderBottomStyle === 'dashed') {
+            doc.dash(borderBottomWidth * 2, { space: borderBottomWidth * 2 });
+          } else if (borderBottomStyle === 'dotted') {
+            doc.dash(borderBottomWidth, { space: borderBottomWidth });
+          }
+          const lineY = y + rowHeight - borderBottomWidth / 2;
+          doc.moveTo(x, lineY).lineTo(x + spanWidth, lineY).stroke();
+          doc.undash().restore();
         }
       }
 
