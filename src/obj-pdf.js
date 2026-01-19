@@ -180,7 +180,17 @@ async function makePdf(json, options = {}) {
   collectFontFamilies(json, familySet);
   const familyNames = Array.from(familySet);
 
-  const resolved = autoResolve
+  const hasAllDefaults =
+    !!requestedFonts.sansRegular &&
+    !!requestedFonts.sansBold &&
+    !!requestedFonts.sansItalic &&
+    !!requestedFonts.sansBoldItalic &&
+    !!requestedFonts.serifRegular &&
+    !!requestedFonts.serifBold &&
+    !!requestedFonts.serifItalic &&
+    !!requestedFonts.serifBoldItalic;
+
+  const resolved = autoResolve && !hasAllDefaults
     ? resolveSystemFonts(requestedFonts, familyNames)
     : { fonts: requestedFonts, familyMap: {} };
   const fontPayload = autoResolve ? resolved.fonts : requestedFonts;

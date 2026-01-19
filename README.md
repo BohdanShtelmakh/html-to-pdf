@@ -93,7 +93,7 @@ Options:
 - `externalCssTimeoutMs`: HTTP timeout for external CSS (default: `5000`)
 - `allowScripts`: execute scripts in HTML (default: `false`, unsafe)
 - `ignoreInvalidImages`: skip images PDFKit cannot decode (default: `false`)
-- `autoResolveFonts`: search system font directories to fill missing font paths and match `font-family` names (default: `true`)
+- `autoResolveFonts`: search system font directories to fill missing font paths and match `font-family` names (default: `true`). If all default font slots are provided, the scan is skipped.
 - SVG images are rasterized via `@resvg/resvg-js`.
 - `fonts`: optional font paths used to match browser metrics
   - `sansRegular`, `sansBold`, `sansItalic`, `sansBoldItalic`
