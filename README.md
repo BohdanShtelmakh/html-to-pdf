@@ -5,6 +5,7 @@
 [![License](https://img.shields.io/npm/l/%40bohard%2Fhtml-to-pdf)](https://github.com/BohdanShtelmakh/html-to-pdf/blob/main/LICENSE)
 
 Generate a PDF from HTML using a lightweight HTML/CSS parser and PDFKit.
+Designed for backend use cases like invoices, reports, and server-side PDF generation where Chromium is too heavy.
 
 ## Install
 
@@ -111,6 +112,7 @@ Do not run untrusted HTML. If you enable `allowScripts`, embedded scripts execut
 ## Notes
 
 Script execution is optional via `allowScripts`, but rendering is not a full browser engine and may differ from Chromium. Expect occasional layout or styling mismatches.
+If something doesn't render correctly, please open an issue and attach a minimal HTML example.
 
 ## Smoke Test
 
@@ -122,7 +124,13 @@ npm test
 
 You can supply custom font paths via the `fonts` option (per-family mapping).
 
-- Glyph coverage depends on the font files you provide. Emoji and CJK characters require fonts that include those glyphs.
+- Glyph coverage depends on the font files you provide. Emoji, CJK, and other Unicode characters require fonts that include those glyphs.
+
+## Limitations
+
+- Not a full Chromium renderer
+- Partial support for complex CSS layouts (flex/grid)
+- SVG rendering is raster-based and slower for large SVGs
 
 ## 💛 Support
 
