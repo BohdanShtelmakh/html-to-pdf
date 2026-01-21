@@ -1,6 +1,6 @@
 {
   "name": "@bohard/html-to-pdf",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Generate a PDF from HTML using a lightweight HTML/CSS parser and PDFKit.",
   "main": "src/index.js",
   "exports": {
