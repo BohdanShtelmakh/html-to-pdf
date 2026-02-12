@@ -20,13 +20,21 @@ function pickFamilyFont(family, map, bold, italic) {
   return entry.regular || entry.bold || entry.italic || entry.boldItalic || null;
 }
 
+function isBoldWeight(value) {
+  if (value == null) return false;
+  const weight = String(value).trim().toLowerCase();
+  if (!weight) return false;
+  if (weight === 'bold' || weight === 'bolder') return true;
+  if (weight === 'normal' || weight === 'lighter') return false;
+  const numeric = parseInt(weight, 10);
+  return Number.isFinite(numeric) && numeric >= 600;
+}
+
 function selectFontForInline(doc, styles, strong = false, italic = false, sizeOverride = null) {
   const requested = sizeOverride != null ? sizeOverride : styleNumber(styles, 'font-size', BASE_PT);
   const size = requested || BASE_PT;
 
-  const isBold =
-    strong ||
-    (!!styles['font-weight'] && (String(styles['font-weight']) >= '600' || String(styles['font-weight']).toLowerCase() === 'bold'));
+  const isBold = strong || isBoldWeight(styles['font-weight']);
   const isItalic = italic || (styles['font-style'] || '').toLowerCase() === 'italic';
 
   const families = parseFontFamilies(styles['font-family']);

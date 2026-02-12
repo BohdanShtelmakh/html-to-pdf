@@ -11,6 +11,8 @@ const { makePdf } = require('./obj-pdf');
  * @param {number} [options.externalCssTimeoutMs]
  * @param {boolean} [options.allowScripts]
  * @param {boolean} [options.ignoreInvalidImages]
+ * @param {number} [options.imgLoadTimeoutMs]
+ * @param {number} [options.imgLoadTimeout]
  * @param {boolean} [options.autoResolveFonts]
  * @param {{top?: number, right?: number, bottom?: number, left?: number}} [options.margins]
  * @param {number} [options.svgScale]
@@ -30,6 +32,8 @@ async function renderPdfFromHtml(html, options = {}) {
   const pdfBuffer = await makePdf(tree, {
     fonts: options.fonts,
     ignoreInvalidImages: options.ignoreInvalidImages,
+    imgLoadTimeoutMs: options.imgLoadTimeoutMs,
+    imgLoadTimeout: options.imgLoadTimeout,
     autoResolveFonts: options.autoResolveFonts,
     margins: options.margins,
     svgScale: options.svgScale,

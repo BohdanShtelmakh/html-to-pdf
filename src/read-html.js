@@ -453,8 +453,15 @@ const NON_INHERITED_STYLES = [
   'clip-path',
 ];
 function getDeclarationBySelector(rules, selector, property) {
+  if (!selector || typeof selector.matches !== 'function') return undefined;
   return rules
-    .filter((rule) => selector.matches(rule.selector))
+    .filter((rule) => {
+      try {
+        return selector.matches(rule.selector);
+      } catch {
+        return false;
+      }
+    })
     .flatMap((rule) => rule.declarations)
     .find((decl) => decl.property === property)?.value;
 }

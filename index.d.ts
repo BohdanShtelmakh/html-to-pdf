@@ -12,6 +12,8 @@ export interface RenderOptions {
   externalCssTimeoutMs?: number;
   allowScripts?: boolean;
   ignoreInvalidImages?: boolean;
+  imgLoadTimeoutMs?: number;
+  imgLoadTimeout?: number;
   autoResolveFonts?: boolean;
   margins?: {
     top?: number;

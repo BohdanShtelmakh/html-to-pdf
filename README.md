@@ -26,6 +26,7 @@ async function run() {
     fetchExternalCss: false,
     loadTimeoutMs: 3000,
     externalCssTimeoutMs: 5000,
+    imgLoadTimeoutMs: 3000,
     allowScripts: false,
     ignoreInvalidImages: true,
     autoResolveFonts: true,
@@ -94,6 +95,8 @@ Options:
 - `fetchExternalCss`: boolean (default: `false`)
 - `loadTimeoutMs`: max wait for external resources (default: `3000`)
 - `externalCssTimeoutMs`: HTTP timeout for external CSS (default: `5000`)
+- `imgLoadTimeoutMs`: HTTP timeout for loading remote images (default: `3000`)
+- `imgLoadTimeout`: alias for `imgLoadTimeoutMs`
 - `allowScripts`: execute scripts in HTML (default: `false`, unsafe)
 - `ignoreInvalidImages`: skip images PDFKit cannot decode (default: `false`)
 - `autoResolveFonts`: search system font directories and match `font-family` names (default: `true`)

@@ -34,6 +34,7 @@ async function renderImage(node, ctx) {
   const { doc, layout } = ctx;
   const measureOnly = !!ctx?.measureOnly;
   const ignoreInvalid = !!ctx?.options?.ignoreInvalidImages;
+  const imgLoadTimeoutMs = normalizeTimeoutMs(ctx?.options?.imgLoadTimeoutMs ?? ctx?.options?.imgLoadTimeout, 3000);
   const styles = mergeStyles(node);
   let width = styleNumber(styles, 'width', null);
   let height = styleNumber(styles, 'height', null);
@@ -107,13 +108,19 @@ async function renderImage(node, ctx) {
         if ((mime.includes('jpeg') || mime.includes('jpg')) && !isJpeg) throw new Error('Invalid JPEG data');
       }
     } else if (/^https?:\/\//i.test(src)) {
-      const res = await fetch(src);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const contentType = (res.headers.get('content-type') || '').toLowerCase();
-      if (contentType.includes('image/svg+xml')) {
-        svgText = await res.text();
-      } else {
-        buf = Buffer.from(await res.arrayBuffer());
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), imgLoadTimeoutMs);
+      try {
+        const res = await fetch(src, { signal: controller.signal });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const contentType = (res.headers.get('content-type') || '').toLowerCase();
+        if (contentType.includes('image/svg+xml')) {
+          svgText = await res.text();
+        } else {
+          buf = Buffer.from(await res.arrayBuffer());
+        }
+      } finally {
+        clearTimeout(timeoutId);
       }
     } else {
       const localPath = path.isAbsolute(src) ? src : path.resolve(process.cwd(), src);
@@ -272,6 +279,12 @@ async function renderImage(node, ctx) {
   }
 
   layout.cursorToNextLine(totalHeight);
+}
+
+function normalizeTimeoutMs(value, fallback) {
+  const timeout = Number(value);
+  if (Number.isFinite(timeout) && timeout > 0) return timeout;
+  return fallback;
 }
 
 function parseAttrLength(value) {
