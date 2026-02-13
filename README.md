@@ -27,6 +27,7 @@ async function run() {
     loadTimeoutMs: 3000,
     externalCssTimeoutMs: 5000,
     imgLoadTimeoutMs: 3000,
+    enableInternalAnchors: true,
     allowScripts: false,
     ignoreInvalidImages: true,
     autoResolveFonts: true,
@@ -97,6 +98,7 @@ Options:
 - `externalCssTimeoutMs`: HTTP timeout for external CSS (default: `5000`)
 - `imgLoadTimeoutMs`: HTTP timeout for loading remote images (default: `3000`)
 - `imgLoadTimeout`: alias for `imgLoadTimeoutMs`
+- `enableInternalAnchors`: allow `href="#id"` links to jump to named destinations (default: `true`)
 - `allowScripts`: execute scripts in HTML (default: `false`, unsafe)
 - `ignoreInvalidImages`: skip images PDFKit cannot decode (default: `false`)
 - `autoResolveFonts`: search system font directories and match `font-family` names (default: `true`)
@@ -134,6 +136,19 @@ You can supply custom font paths via the `fonts` option (per-family mapping).
 - Not a full Chromium renderer
 - Partial support for complex CSS layouts (flex/grid)
 - SVG rendering is raster-based and slower for large SVGs
+
+## Pagination Support
+
+- Supports `page-break-before: always` and `break-before: page|always|left|right`
+- Supports `break-inside: avoid` and `page-break-inside: avoid` for block containers
+- Existing `page-break-after: always` support remains
+- Full CSS fragmentation parity with browsers is not guaranteed
+
+## Links In PDF
+
+- `<a href="https://...">`, `<a href="http://...">`, `<a href="mailto:...">`, and `<a href="tel:...">` are exported as clickable PDF links
+- `<a href="#section-id">` creates internal `GoTo` links when a matching `id="section-id"` destination exists
+- Internal anchors are controlled by `enableInternalAnchors` (default `true`)
 
 ## 💛 Support
 

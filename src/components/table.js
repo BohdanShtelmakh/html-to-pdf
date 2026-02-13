@@ -1,5 +1,6 @@
 const { styleNumber, styleColor, textAlign, lineHeightValue } = require('../pdf/style');
 const { inlineRuns, selectFontForInline, gatherPlainText } = require('../pdf/text');
+const { getRunLinkTextOptions } = require('../pdf/link');
 
 function normalizePaint(val) {
   if (!val) return null;
@@ -204,11 +205,15 @@ async function renderTable(node, ctx, tableStyles = {}) {
         doc.y = y + padT;
         for (const run of runs) {
           selectFontForInline(doc, run.styles || {}, isHeader || !!run.bold, !!run.italic);
+          const linkOpts = getRunLinkTextOptions(run, {
+            enableInternalAnchors: ctx?.options?.enableInternalAnchors,
+          });
           doc.fillColor(styleColor(run.styles || {}, 'color', '#000')).text(run.text, {
             width: spanWidth - padL - padR,
             align,
             lineGap,
             continued: true,
+            ...linkOpts,
           });
         }
         doc.text('', { continued: false });

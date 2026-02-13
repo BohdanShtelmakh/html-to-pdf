@@ -72,11 +72,15 @@ function selectFontForInline(doc, styles, strong = false, italic = false, sizeOv
 function inlineRuns(node, parentStyles = {}) {
   const runs = [];
 
-  function walk(n, inherited = { bold: false, italic: false, underline: false, styles: parentStyles }) {
+  function walk(n, inherited = { bold: false, italic: false, underline: false, styles: parentStyles, href: null, anchorTarget: null }) {
     if (!n) return;
 
     if (n.type === 'text') {
-      runs.push({ text: n.text || '', ...inherited });
+      runs.push({
+        text: n.text || '',
+        ...inherited,
+        isLink: !!inherited.href,
+      });
       return;
     }
     if (n.type !== 'element') return;
@@ -84,6 +88,27 @@ function inlineRuns(node, parentStyles = {}) {
     const tag = (n.tag || '').toLowerCase();
     const styles = { ...inherited.styles, ...mergeStyles(n) };
     const next = { ...inherited, styles };
+
+    if (tag === 'a') {
+      const href = n.attrs?.href ? String(n.attrs.href).trim() : '';
+      if (href) {
+        next.href = href;
+        if (href.startsWith('#')) {
+          const target = href.slice(1);
+          if (target) {
+            try {
+              next.anchorTarget = decodeURIComponent(target);
+            } catch {
+              next.anchorTarget = target;
+            }
+          } else {
+            next.anchorTarget = null;
+          }
+        } else {
+          next.anchorTarget = null;
+        }
+      }
+    }
 
     if (tag === 'b' || tag === 'strong') next.bold = true;
     if (tag === 'i' || tag === 'em') next.italic = true;

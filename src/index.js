@@ -13,6 +13,7 @@ const { makePdf } = require('./obj-pdf');
  * @param {boolean} [options.ignoreInvalidImages]
  * @param {number} [options.imgLoadTimeoutMs]
  * @param {number} [options.imgLoadTimeout]
+ * @param {boolean} [options.enableInternalAnchors]
  * @param {boolean} [options.autoResolveFonts]
  * @param {{top?: number, right?: number, bottom?: number, left?: number}} [options.margins]
  * @param {number} [options.svgScale]
@@ -34,6 +35,7 @@ async function renderPdfFromHtml(html, options = {}) {
     ignoreInvalidImages: options.ignoreInvalidImages,
     imgLoadTimeoutMs: options.imgLoadTimeoutMs,
     imgLoadTimeout: options.imgLoadTimeout,
+    enableInternalAnchors: options.enableInternalAnchors,
     autoResolveFonts: options.autoResolveFonts,
     margins: options.margins,
     svgScale: options.svgScale,

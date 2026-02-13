@@ -14,6 +14,7 @@ export interface RenderOptions {
   ignoreInvalidImages?: boolean;
   imgLoadTimeoutMs?: number;
   imgLoadTimeout?: number;
+  enableInternalAnchors?: boolean;
   autoResolveFonts?: boolean;
   margins?: {
     top?: number;

@@ -39,7 +39,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "test": "node -e \"const { renderPdfFromHtml } = require('./src/index.js'); renderPdfFromHtml('<p>OK</p>').then(b=>{if(!Buffer.isBuffer(b)) throw new Error('no buffer'); console.log('smoke ok', b.length);}).catch(e=>{console.error(e); process.exit(1);});\""
+    "test": "node test/run-tests.js"
   },
   "dependencies": {
     "css": "^3.0.0",

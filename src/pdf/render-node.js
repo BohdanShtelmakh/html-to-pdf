@@ -16,6 +16,7 @@ const {
 const { inlineRuns, selectFontForInline, gatherPlainText } = require('./text');
 const { renderList, renderPre } = require('./blocks');
 const { Layout } = require('./layout');
+const { getRunLinkTextOptions } = require('./link');
 
 const PX_TO_PT = 72 / 96;
 
@@ -97,6 +98,79 @@ function applyPageBreakAfter(styles, ctx, node) {
     ctx.layout.pendingBottomMargin = 0;
     ctx.layout.atStartOfPage = true;
   }
+}
+
+function applyPageBreakBefore(styles, ctx) {
+  if (!styles || ctx?.measureOnly) return;
+  const before = String(styles['break-before'] || styles['page-break-before'] || '')
+    .trim()
+    .toLowerCase();
+  const shouldBreak = ['always', 'page', 'left', 'right'].includes(before);
+  if (!shouldBreak) return;
+  if (ctx.layout.atStartOfPage) return;
+  ctx.layout.doc.addPage();
+  ctx.layout.x = ctx.layout.marginLeft;
+  ctx.layout.y = ctx.layout.marginTop;
+  ctx.layout.pendingBottomMargin = 0;
+  ctx.layout.atStartOfPage = true;
+}
+
+function shouldAvoidBreakInside(styles = {}) {
+  const value = String(styles['break-inside'] || styles['page-break-inside'] || '')
+    .trim()
+    .toLowerCase();
+  return value === 'avoid' || value === 'avoid-page';
+}
+
+function maybeApplyBreakInsideAvoid(node, styles, ctx) {
+  if (!node || !styles || !ctx || ctx.measureOnly || ctx.avoidMeasure) return;
+  const tag = String(node.tag || '').toLowerCase();
+  if (!shouldAvoidBreakInside(styles)) return;
+  if (tag === 'root' || tag === 'body') return;
+  const display = String(styles.display || '').toLowerCase();
+  if (display === 'inline' || display === 'inline-block' || display === 'none') return;
+
+  const { doc, layout } = ctx;
+  const available = doc.page.height - layout.marginBottom - layout.y;
+  const fullPage = doc.page.height - layout.marginTop - layout.marginBottom;
+  if (available <= 0) return;
+
+  const measureLayout = new Layout(doc, {
+    margins: {
+      left: layout.x,
+      right: doc.page.width - (layout.x + layout.contentWidth()),
+      top: layout.y,
+      bottom: layout.marginBottom,
+    },
+    measureOnly: true,
+  });
+  measureLayout.atStartOfPage = layout.atStartOfPage;
+  measureLayout.pendingBottomMargin = layout.pendingBottomMargin;
+
+  return renderNode(node, { ...ctx, layout: measureLayout, measureOnly: true, avoidMeasure: true }).then(() => {
+    const estimated = Math.max(0, measureLayout.y - layout.y);
+    if (estimated <= available) return;
+    if (estimated > fullPage) return;
+    layout.doc.addPage();
+    layout.x = layout.marginLeft;
+    layout.y = layout.marginTop;
+    layout.pendingBottomMargin = 0;
+    layout.atStartOfPage = true;
+  });
+}
+
+function registerAnchorDestination(node, ctx) {
+  if (!node || !ctx || ctx.measureOnly) return;
+  if (ctx.options?.enableInternalAnchors === false) return;
+  const id = node?.attrs?.id ? String(node.attrs.id).trim() : '';
+  if (!id) return;
+  if (typeof ctx.doc.addNamedDestination !== 'function') return;
+  const seen = ctx.runtime?.namedDestinations;
+  if (seen && seen.has(id)) return;
+  try {
+    ctx.doc.addNamedDestination(id, 'XYZ', null, ctx.layout.y, null);
+    if (seen) seen.add(id);
+  } catch {}
 }
 
 function escapeXml(value) {
@@ -429,7 +503,10 @@ function renderInlineRuns(runs, ctx, { baseStyles, align, lineGap, tag }) {
           ? Math.max(0, (item.boxH - item.padT - item.padB - item.border * 2 - item.textHeight) / 2)
           : 0;
         const textY = y + yOffset + item.border + item.padT + inlineAdjust;
-        doc.text(item.run.text || '', x + item.border + item.padL, textY, { lineGap: 0 });
+        const linkOpts = getRunLinkTextOptions(item.run, {
+          enableInternalAnchors: ctx?.options?.enableInternalAnchors,
+        });
+        doc.text(item.run.text || '', x + item.border + item.padL, textY, { lineGap: 0, ...linkOpts });
       }
 
       x += item.boxW;
@@ -925,6 +1002,8 @@ async function renderNode(node, ctx) {
   const styles = mergeStyles(node);
   const display = String(styles.display || '').toLowerCase();
   if (display === 'none') return;
+  applyPageBreakBefore(styles, ctx);
+  await maybeApplyBreakInsideAvoid(node, styles, ctx);
   if (process.env.HTML_TO_PDF_DEBUG === '1' && (tag === 'figure' || tag === 'figcaption' || tag === 'img')) {
     console.log('[node-start]', {
       tag,
@@ -946,6 +1025,7 @@ async function renderNode(node, ctx) {
   const mt = isRoot ? 0 : computed.mt;
   const mb = isRoot ? 0 : computed.mb;
   const finishBlock = layout.newBlock(mt, mb);
+  registerAnchorDestination(node, ctx);
   const color = styleColor(styles, 'color', '#000');
   const align = textAlign(styles);
 
@@ -1079,12 +1159,16 @@ async function renderNode(node, ctx) {
         for (const run of runs) {
           const s = { ...styles, ...(run.styles || {}) };
           selectFontForInline(doc, s, !!run.bold, !!run.italic);
+          const linkOpts = getRunLinkTextOptions(run, {
+            enableInternalAnchors: ctx?.options?.enableInternalAnchors,
+          });
           doc.fillColor(styleColor(s, 'color', color)).text(run.text, {
             width: availableWidth,
             align,
             lineGap: gap,
             continued: true,
             underline: !!run.underline,
+            ...linkOpts,
           });
         }
         doc.text('', { continued: false });
@@ -1139,7 +1223,8 @@ async function renderNode(node, ctx) {
     const size = styleNumber(styles, 'font-size', defaultFontSizeFor(tag));
 
     const gap = lineGapFor(size, styles, tag);
-    const text = gatherPlainText(node);
+    const runs = normalizeRuns(inlineRuns(node), shouldCollapseWhitespace(styles));
+    const text = runs.map((r) => r.text).join('');
     const letterSpacing = styleNumber(styles, 'letter-spacing', 0, { baseSize: size });
     const wordSpacing = styleNumber(styles, 'word-spacing', 0, { baseSize: size });
     const padding = styleNumber(styles, 'padding', 0);
@@ -1172,7 +1257,25 @@ async function renderNode(node, ctx) {
     const textY = startY + paddingTop;
 
     if (!measureOnly) {
-      doc.fillColor(color).text(text, layout.x, textY, { width: layout.contentWidth(), align, lineGap: gap });
+      doc.fillColor(color);
+      doc.x = layout.x;
+      doc.y = textY;
+      for (const run of runs) {
+        const s = { ...styles, ...(run.styles || {}) };
+        selectFontForInline(doc, s, true, !!run.italic);
+        const linkOpts = getRunLinkTextOptions(run, {
+          enableInternalAnchors: ctx?.options?.enableInternalAnchors,
+        });
+        doc.fillColor(styleColor(s, 'color', color)).text(run.text, {
+          width: layout.contentWidth(),
+          align,
+          lineGap: gap,
+          continued: true,
+          underline: !!run.underline,
+          ...linkOpts,
+        });
+      }
+      doc.text('', { continued: false });
     }
 
     if (!measureOnly && borderBottom) {
@@ -1253,20 +1356,24 @@ async function renderNode(node, ctx) {
     if (!measureOnly && !useInlineBoxes) {
       for (const run of runs) {
         const s = { ...styles, ...(run.styles || {}) };
-        selectFontForInline(doc, s, !!run.bold, !!run.italic);
-        const ls = styleNumber(s, 'letter-spacing', null, { baseSize: size });
-        const ws = styleNumber(s, 'word-spacing', null, { baseSize: size });
-        const textOptions = {
-          width: availableWidth,
-          align,
-          lineGap: gap,
-          continued: true,
-          underline: !!run.underline,
-        };
-        if (ls != null) textOptions.characterSpacing = ls;
-        if (ws != null) textOptions.wordSpacing = ws;
-        doc.fillColor(styleColor(s, 'color', color)).text(run.text, textOptions);
-      }
+              selectFontForInline(doc, s, !!run.bold, !!run.italic);
+              const ls = styleNumber(s, 'letter-spacing', null, { baseSize: size });
+              const ws = styleNumber(s, 'word-spacing', null, { baseSize: size });
+              const linkOpts = getRunLinkTextOptions(run, {
+                enableInternalAnchors: ctx?.options?.enableInternalAnchors,
+              });
+              const textOptions = {
+                width: availableWidth,
+                align,
+                lineGap: gap,
+                continued: true,
+                underline: !!run.underline,
+                ...linkOpts,
+              };
+              if (ls != null) textOptions.characterSpacing = ls;
+              if (ws != null) textOptions.wordSpacing = ws;
+              doc.fillColor(styleColor(s, 'color', color)).text(run.text, textOptions);
+            }
       doc.text('', { continued: false });
     }
 
@@ -1593,11 +1700,15 @@ async function renderNode(node, ctx) {
             for (const run of runs) {
               const s = { ...styles, ...(run.styles || {}) };
               selectFontForInline(doc, s, !!run.bold, !!run.italic);
+              const linkOpts = getRunLinkTextOptions(run, {
+                enableInternalAnchors: ctx?.options?.enableInternalAnchors,
+              });
               doc.fillColor(styleColor(s, 'color', '#000')).text(run.text, {
                 width: layout.contentWidth(),
                 align,
                 lineGap: singleLine ? 0 : gap,
                 continued: true,
+                ...linkOpts,
               });
             }
             doc.text('', { continued: false });

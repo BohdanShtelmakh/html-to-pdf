@@ -1,5 +1,6 @@
 const { styleNumber, styleColor, lineHeightValue } = require('./style');
 const { inlineRuns, selectFontForInline, gatherPlainText } = require('./text');
+const { getRunLinkTextOptions } = require('./link');
 
 async function renderList(node, ctx, ordered = false) {
   const { doc, layout } = ctx;
@@ -61,9 +62,13 @@ async function renderList(node, ctx, ordered = false) {
       const runs = inlineRuns(li);
       for (const run of runs) {
         selectFontForInline(doc, run.styles || {}, !!run.bold, !!run.italic);
+        const linkOpts = getRunLinkTextOptions(run, {
+          enableInternalAnchors: ctx?.options?.enableInternalAnchors,
+        });
         doc.fillColor(styleColor(run.styles || {}, 'color', '#000')).text(run.text, {
           lineGap,
           continued: true,
+          ...linkOpts,
         });
       }
       doc.text('', { continued: false });

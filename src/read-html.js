@@ -418,7 +418,11 @@ const NON_INHERITED_STYLES = [
 
   'grid',
   'grid-template-columns',
+  'page-break-before',
+  'page-break-inside',
   'page-break-after',
+  'break-before',
+  'break-inside',
   'grid-template-rows',
   'grid-template-areas',
   'gap',

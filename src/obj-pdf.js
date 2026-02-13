@@ -154,7 +154,8 @@ async function makePdf(json, options = {}) {
   if (familyMap && Object.keys(familyMap).length) doc._fontFamilyMap = familyMap;
 
   const layout = new Layout(doc, { margins: doc.page.margins });
-  await renderNode(json, { doc, layout, options });
+  const runtime = { namedDestinations: new Set() };
+  await renderNode(json, { doc, layout, options, runtime });
   const docDone = new Promise((resolve, reject) => {
     doc.on('end', resolve);
     doc.on('error', reject);
