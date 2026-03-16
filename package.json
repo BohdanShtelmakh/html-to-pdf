@@ -22,11 +22,25 @@
   },
   "funding": "https://send.monobank.ua/jar/3WznEHehpC",
   "keywords": [
+    "html-to-pdf",
+    "html2pdf",
     "html",
     "pdf",
     "pdfkit",
+    "node-pdf",
+    "server-side-pdf",
+    "invoice-pdf",
+    "report-pdf",
+    "backend-pdf",
+    "pdf-buffer",
+    "pdf-generator",
+    "html-renderer",
+    "html-to-pdf-node",
+    "lightweight-pdf",
+    "fast-pdf",
     "renderer",
-    "rendering"
+    "invoice",
+    "report"
   ],
   "engines": {
     "node": ">=18"
