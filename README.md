@@ -1,8 +1,8 @@
 # html-to-pdf
 
-[![NPM Version](https://img.shields.io/npm/v/%40bohard%2Fhtml-to-pdf)](https://www.npmjs.com/package/@bohard/html-to-pdf)
-[![NPM Downloads](https://img.shields.io/npm/dw/%40bohard%2Fhtml-to-pdf)](https://www.npmjs.com/package/@bohard/html-to-pdf)
-[![License](https://img.shields.io/npm/l/%40bohard%2Fhtml-to-pdf)](https://github.com/BohdanShtelmakh/html-to-pdf/blob/main/LICENSE)
+[![NPM Version](https://img.shields.io/npm/v/html-pdf-lite)](https://www.npmjs.com/package/html-pdf-lite)
+[![NPM Downloads](https://img.shields.io/npm/dw/html-pdf-lite)](https://www.npmjs.com/package/html-pdf-lite)
+[![License](https://img.shields.io/npm/l/html-pdf-lite)](https://github.com/BohdanShtelmakh/html-to-pdf/blob/main/LICENSE)
 
 Generate a PDF from HTML using a lightweight HTML/CSS parser and PDFKit.
 Designed for backend use cases like invoices, reports, and server-side PDF generation where Chromium is too heavy.
@@ -10,14 +10,14 @@ Designed for backend use cases like invoices, reports, and server-side PDF gener
 ## Install
 
 ```bash
-npm install @bohard/html-to-pdf
+npm install html-pdf-lite
 ```
 
 ## Usage
 
 ```js
 const fs = require('fs');
-const { renderPdfFromHtml } = require('@bohard/html-to-pdf');
+const { renderPdfFromHtml } = require('html-pdf-lite');
 
 async function run() {
   const html = '<html><body><h1>Hello</h1></body></html>';
@@ -52,14 +52,14 @@ Chrome-based tools like Puppeteer or Playwright are slow for backend PDF generat
 - Huge memory usage
 - Cold starts in serverless
 
-**@bohard/html-to-pdf** is built for speed-first PDF generation.
+**html-pdf-lite** is built for speed-first PDF generation.
 
 Typical performance:
 
 | Engine | Typical Time |
 |:------ |------------:|
 | Puppeteer | 2–4s |
-| @bohard/html-to-pdf | **200–400ms** |
+| html-pdf-lite | **200–400ms** |
 
 This makes it perfect for:
 - APIs
