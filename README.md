@@ -1,5 +1,6 @@
 # html-to-pdf
 
+[![CI](https://github.com/BohdanShtelmakh/html-to-pdf/actions/workflows/ci.yml/badge.svg)](https://github.com/BohdanShtelmakh/html-to-pdf/actions/workflows/ci.yml)
 [![NPM Version](https://img.shields.io/npm/v/html-pdf-lite)](https://www.npmjs.com/package/html-pdf-lite)
 [![NPM Downloads](https://img.shields.io/npm/dw/html-pdf-lite)](https://www.npmjs.com/package/html-pdf-lite)
 [![License](https://img.shields.io/npm/l/html-pdf-lite)](https://github.com/BohdanShtelmakh/html-to-pdf/blob/main/LICENSE)

@@ -1,4 +1,16 @@
-const tests = [require('./smoke.test'), require('./pagination.test'), require('./links.test')];
+const tests = [
+  require('./smoke.test'),
+  require('./pagination.test'),
+  require('./links.test'),
+  require('./tables.test'),
+  require('./images.test'),
+  require('./layout.test'),
+  require('./css.test'),
+  require('./blockquote.test'),
+  require('./validation.test'),
+  require('./fonts.test'),
+  require('./elements.test'),
+];
 
 async function main() {
   for (const t of tests) {
