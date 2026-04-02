@@ -251,6 +251,7 @@ function textDecorations(styles) {
 module.exports = {
   BASE_PT,
   BODY_LH,
+  PX_TO_PT,
   em,
   defaultFontSizeFor,
   defaultMarginsFor,

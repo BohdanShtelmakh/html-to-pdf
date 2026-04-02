@@ -5,7 +5,9 @@ let fontkit = null;
 try {
   // fontkit is a pdfkit dependency; used for basic font validation.
   fontkit = require('fontkit');
-} catch {}
+} catch {
+  // fontkit is optional; font validation is skipped when unavailable
+}
 
 const FONT_EXTS = new Set(['.ttf', '.otf']);
 const STYLE_TOKENS = /(bold|black|heavy|demi|italic|oblique|regular|medium|light)/g;
@@ -54,7 +56,8 @@ function walkFonts(dir, out) {
   let entries;
   try {
     entries = fs.readdirSync(dir, { withFileTypes: true });
-  } catch {
+  } catch (err) {
+    if (process.env.HTML_TO_PDF_DEBUG_FONTS === '1') console.warn('[fonts] readdir failed:', dir, err.message || err);
     return;
   }
   for (const entry of entries) {
@@ -91,7 +94,8 @@ function isFontSupported(filePath) {
   try {
     const font = fontkit.openSync(filePath);
     ok = !!font && typeof font.createSubset === 'function';
-  } catch {
+  } catch (err) {
+    if (process.env.HTML_TO_PDF_DEBUG_FONTS === '1') console.warn('[fonts] openSync failed:', filePath, err.message || err);
     ok = false;
   }
   supportCache.set(filePath, ok);

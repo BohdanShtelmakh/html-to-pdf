@@ -340,7 +340,9 @@ async function collectCssRules(doc, { fetchExternal = true, externalCssTimeoutMs
             });
           }
         }
-      } catch {}
+      } catch (err) {
+        if (process.env.HTML_TO_PDF_DEBUG === '1') console.warn('[css-fetch] failed for', href, err.message || err);
+      }
     }
   }
 
@@ -640,6 +642,8 @@ async function parseHtmlToObject(
     await Promise.race([loadPromise, timeoutPromise]);
   }
 
+  // Allow JSDOM a brief settling period for any remaining async resource
+  // loading (stylesheets, images) before we snapshot the DOM tree.
   await new Promise((r) => setTimeout(r, 50));
 
   const { document } = dom.window;

@@ -1,5 +1,4 @@
 const { renderImage, renderTable } = require('../components');
-const { Resvg } = require('@resvg/resvg-js');
 const {
   BASE_PT,
   defaultFontSizeFor,
@@ -11,14 +10,21 @@ const {
   lineGapFor,
   lineHeightValue,
   parsePx,
-  parsePxWithOptions,
 } = require('./style');
 const { inlineRuns, selectFontForInline, gatherPlainText } = require('./text');
 const { renderList, renderPre } = require('./blocks');
 const { Layout } = require('./layout');
 const { getRunLinkTextOptions } = require('./link');
-
-const PX_TO_PT = 72 / 96;
+const { drawBox } = require('./draw-box');
+const {
+  applyPageBreakAfter,
+  applyPageBreakBefore,
+  maybeApplyBreakInsideAvoid,
+  registerAnchorDestination,
+} = require('./page-break');
+const { renderInlineSvg } = require('./render-svg');
+const { renderFlexRow } = require('./render-flex');
+const { renderGrid, parseGridTemplateColumns, parseGridColumnCount } = require('./render-grid');
 
 const INLINE_TAGS = new Set([
   'span',
@@ -82,242 +88,6 @@ function isInlineOnly(node) {
 
 function elementChildren(node) {
   return (node.children || []).filter((child) => child.type === 'element');
-}
-
-function applyPageBreakAfter(styles, ctx, node) {
-  if (!styles || ctx?.measureOnly) return;
-  const value = String(styles['page-break-after'] || '')
-    .trim()
-    .toLowerCase();
-  const isLast = !!node?._isLastInParent;
-  const parentTag = String(node?._parentTag || '').toLowerCase();
-  if (value === 'always' && !(isLast && (parentTag === 'body' || parentTag === 'root'))) {
-    ctx.layout.doc.addPage();
-    ctx.layout.x = ctx.layout.marginLeft;
-    ctx.layout.y = ctx.layout.marginTop;
-    ctx.layout.pendingBottomMargin = 0;
-    ctx.layout.atStartOfPage = true;
-  }
-}
-
-function applyPageBreakBefore(styles, ctx) {
-  if (!styles || ctx?.measureOnly) return;
-  const before = String(styles['break-before'] || styles['page-break-before'] || '')
-    .trim()
-    .toLowerCase();
-  const shouldBreak = ['always', 'page', 'left', 'right'].includes(before);
-  if (!shouldBreak) return;
-  if (ctx.layout.atStartOfPage) return;
-  ctx.layout.doc.addPage();
-  ctx.layout.x = ctx.layout.marginLeft;
-  ctx.layout.y = ctx.layout.marginTop;
-  ctx.layout.pendingBottomMargin = 0;
-  ctx.layout.atStartOfPage = true;
-}
-
-function shouldAvoidBreakInside(styles = {}) {
-  const value = String(styles['break-inside'] || styles['page-break-inside'] || '')
-    .trim()
-    .toLowerCase();
-  return value === 'avoid' || value === 'avoid-page';
-}
-
-function maybeApplyBreakInsideAvoid(node, styles, ctx) {
-  if (!node || !styles || !ctx || ctx.measureOnly || ctx.avoidMeasure) return;
-  const tag = String(node.tag || '').toLowerCase();
-  if (!shouldAvoidBreakInside(styles)) return;
-  if (tag === 'root' || tag === 'body') return;
-  const display = String(styles.display || '').toLowerCase();
-  if (display === 'inline' || display === 'inline-block' || display === 'none') return;
-
-  const { doc, layout } = ctx;
-  const available = doc.page.height - layout.marginBottom - layout.y;
-  const fullPage = doc.page.height - layout.marginTop - layout.marginBottom;
-  if (available <= 0) return;
-
-  const measureLayout = new Layout(doc, {
-    margins: {
-      left: layout.x,
-      right: doc.page.width - (layout.x + layout.contentWidth()),
-      top: layout.y,
-      bottom: layout.marginBottom,
-    },
-    measureOnly: true,
-  });
-  measureLayout.atStartOfPage = layout.atStartOfPage;
-  measureLayout.pendingBottomMargin = layout.pendingBottomMargin;
-
-  return renderNode(node, { ...ctx, layout: measureLayout, measureOnly: true, avoidMeasure: true }).then(() => {
-    const estimated = Math.max(0, measureLayout.y - layout.y);
-    if (estimated <= available) return;
-    if (estimated > fullPage) return;
-    layout.doc.addPage();
-    layout.x = layout.marginLeft;
-    layout.y = layout.marginTop;
-    layout.pendingBottomMargin = 0;
-    layout.atStartOfPage = true;
-  });
-}
-
-function registerAnchorDestination(node, ctx) {
-  if (!node || !ctx || ctx.measureOnly) return;
-  if (ctx.options?.enableInternalAnchors === false) return;
-  const id = node?.attrs?.id ? String(node.attrs.id).trim() : '';
-  if (!id) return;
-  if (typeof ctx.doc.addNamedDestination !== 'function') return;
-  const seen = ctx.runtime?.namedDestinations;
-  if (seen && seen.has(id)) return;
-  try {
-    ctx.doc.addNamedDestination(id, 'XYZ', null, ctx.layout.y, null);
-    if (seen) seen.add(id);
-  } catch {}
-}
-
-function escapeXml(value) {
-  return String(value)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-function normalizeSvgAttrName(name) {
-  const key = String(name || '');
-  const lower = key.toLowerCase();
-  const map = {
-    viewbox: 'viewBox',
-    preserveaspectratio: 'preserveAspectRatio',
-    gradientunits: 'gradientUnits',
-    gradienttransform: 'gradientTransform',
-    spreadmethod: 'spreadMethod',
-    patternunits: 'patternUnits',
-    patterncontentunits: 'patternContentUnits',
-    patterntransform: 'patternTransform',
-    clippathunits: 'clipPathUnits',
-  };
-  return map[lower] || key;
-}
-
-function normalizeSvgTagName(tag) {
-  const key = String(tag || '');
-  const lower = key.toLowerCase();
-  const map = {
-    lineargradient: 'linearGradient',
-    radialgradient: 'radialGradient',
-    clippath: 'clipPath',
-    foreignobject: 'foreignObject',
-    textpath: 'textPath',
-  };
-  return map[lower] || key;
-}
-
-function serializeSvg(node, inSvg = false) {
-  if (!node) return '';
-  if (node.type === 'text') return escapeXml(node.text || '');
-  if (node.type !== 'element') return '';
-  const rawTag = node.tag || '';
-  const nextInSvg = inSvg || rawTag.toLowerCase() === 'svg';
-  const tag = nextInSvg ? normalizeSvgTagName(rawTag) : rawTag;
-  const attrs = node.attrs || {};
-  const attrEntries = Object.entries(attrs).map(([k, v]) => [nextInSvg ? normalizeSvgAttrName(k) : k, v]);
-  if (tag.toLowerCase() === 'svg' && !('xmlns' in attrs)) {
-    attrEntries.push(['xmlns', 'http://www.w3.org/2000/svg']);
-  }
-  const attrString = attrEntries.map(([k, v]) => `${k}="${escapeXml(v)}"`).join(' ');
-  const open = attrString ? `<${tag} ${attrString}>` : `<${tag}>`;
-  const children = (node.children || []).map((child) => serializeSvg(child, nextInSvg)).join('');
-  return `${open}${children}</${tag}>`;
-}
-
-function parseViewBox(viewBox) {
-  if (!viewBox) return null;
-  const parts = String(viewBox)
-    .trim()
-    .split(/[\s,]+/)
-    .map((p) => parseFloat(p));
-  if (parts.length !== 4 || parts.some((n) => !Number.isFinite(n))) return null;
-  return { w: parts[2], h: parts[3] };
-}
-
-function parseAttrDimension(value) {
-  if (value == null) return null;
-  const parsed = parsePx(value, null);
-  if (parsed != null) return parsed;
-  const num = parseFloat(String(value).trim());
-  if (!Number.isFinite(num)) return null;
-  return num * PX_TO_PT;
-}
-
-function parseGridColumnCount(value) {
-  if (!value || typeof value !== 'string') return null;
-  const repeatMatch = value.match(/repeat\(\s*(\d+)\s*,/i);
-  if (repeatMatch) return parseInt(repeatMatch[1], 10);
-  const parts = value.trim().split(/\s+/).filter(Boolean);
-  return parts.length || null;
-}
-
-function expandRepeatTokens(value) {
-  if (!value || typeof value !== 'string') return value;
-  return value.replace(/repeat\(\s*(\d+)\s*,\s*([^)]+)\)/gi, (_m, countRaw, inner) => {
-    const count = parseInt(countRaw, 10);
-    if (!Number.isFinite(count) || count <= 0) return inner;
-    const tokens = inner.trim().split(/\s+/).filter(Boolean);
-    if (!tokens.length) return '';
-    return Array.from({ length: count }, () => tokens.join(' ')).join(' ');
-  });
-}
-
-function parseGridTemplateColumns(value, totalWidth, gap) {
-  if (!value || typeof value !== 'string') return null;
-  const expanded = expandRepeatTokens(value);
-  const parts = expanded.trim().split(/\s+/).filter(Boolean);
-  if (!parts.length) return null;
-
-  const cols = [];
-  let fixed = 0;
-  let frTotal = 0;
-
-  for (const token of parts) {
-    const lower = token.toLowerCase();
-    if (lower.endsWith('fr')) {
-      const fr = parseFloat(lower.replace('fr', ''));
-      const value = Number.isFinite(fr) && fr > 0 ? fr : 1;
-      cols.push({ type: 'fr', value });
-      frTotal += value;
-      continue;
-    }
-    if (lower === 'auto') {
-      cols.push({ type: 'fr', value: 1 });
-      frTotal += 1;
-      continue;
-    }
-    const px = parsePxWithOptions(token, null, { percentBase: totalWidth });
-    if (px != null) {
-      cols.push({ type: 'fixed', value: px });
-      fixed += px;
-      continue;
-    }
-    cols.push({ type: 'fr', value: 1 });
-    frTotal += 1;
-  }
-
-  const gapsTotal = Math.max(0, gap) * Math.max(0, cols.length - 1);
-  const remaining = Math.max(0, totalWidth - fixed - gapsTotal);
-
-  return cols.map((col) => {
-    if (col.type === 'fixed') return col.value;
-    if (frTotal <= 0) return 0;
-    return (remaining * col.value) / frTotal;
-  });
-}
-
-function parseGridSpan(value) {
-  if (!value || typeof value !== 'string') return 1;
-  const match = value.match(/span\s+(\d+)/i);
-  if (!match) return 1;
-  const span = parseInt(match[1], 10);
-  return Number.isFinite(span) && span > 0 ? span : 1;
 }
 
 function hasInlineBoxStyles(styles = {}) {
@@ -517,447 +287,6 @@ function renderInlineRuns(runs, ctx, { baseStyles, align, lineGap, tag }) {
   return y - layout.y;
 }
 
-function collectLineRuns(node, parentStyles = {}) {
-  const lines = [[]];
-  const pushLine = () => {
-    if (lines[lines.length - 1].length) lines.push([]);
-  };
-
-  function walk(n, inherited, isRoot) {
-    if (!n) return;
-    if (n.type === 'text') {
-      lines[lines.length - 1].push({ text: n.text || '', ...inherited });
-      return;
-    }
-    if (n.type !== 'element') return;
-
-    const tag = (n.tag || '').toLowerCase();
-    const styles = { ...inherited.styles, ...mergeStyles(n) };
-    const next = { ...inherited, styles };
-    if (tag === 'b' || tag === 'strong') next.bold = true;
-    if (tag === 'i' || tag === 'em') next.italic = true;
-
-    const isInline = isInlineDisplay(tag, styles);
-    if (!isInline && !isRoot) pushLine();
-    (n.children || []).forEach((child) => walk(child, next, false));
-    if (!isInline && !isRoot) pushLine();
-  }
-
-  walk(node, { bold: false, italic: false, styles: parentStyles }, true);
-  if (lines.length && lines[lines.length - 1].length === 0) lines.pop();
-  return lines;
-}
-
-async function renderInlineSvg(node, ctx) {
-  const { doc, layout } = ctx;
-  const measureOnly = !!ctx?.measureOnly;
-  const ignoreInvalid = !!ctx?.options?.ignoreInvalidImages;
-  const styles = mergeStyles(node);
-  const borderWidth = styleNumber(styles, 'border-width', 0);
-  const borderStyle = String(styles['border-style'] || '')
-    .trim()
-    .toLowerCase();
-  const borderColor = styleColor(styles, 'border-color', '#333333');
-  const borderPaint = ['none', 'transparent'].includes(String(borderColor).trim().toLowerCase()) ? null : borderColor;
-  const hasBorder = borderWidth > 0 && borderPaint && !['none', 'hidden'].includes(borderStyle);
-  let width = styleNumber(styles, 'width', null, { percentBase: layout.contentWidth() });
-  let height = styleNumber(styles, 'height', null);
-  const attrWidth = parseAttrDimension(node.attrs?.width);
-  const attrHeight = parseAttrDimension(node.attrs?.height);
-
-  if (width == null && attrWidth != null) width = attrWidth;
-  if (height == null && attrHeight != null) height = attrHeight;
-
-  const viewBox = parseViewBox(node.attrs?.viewBox);
-  const aspect = width && height ? width / height : viewBox ? viewBox.w / viewBox.h : null;
-
-  const maxW = layout.contentWidth();
-  const maxH = Number.isFinite(styleNumber(styles, 'max-height', Infinity))
-    ? styleNumber(styles, 'max-height', Infinity)
-    : Infinity;
-  const minW = styleNumber(styles, 'min-width', 0);
-  const minH = styleNumber(styles, 'min-height', 0);
-  const widthSpecified = width != null;
-  const heightSpecified = height != null;
-  const maxWidthStyle = styleNumber(styles, 'max-width', widthSpecified ? Infinity : maxW);
-
-  if (!width && !height) {
-    if (viewBox) {
-      width = Math.min(maxW, viewBox.w * PX_TO_PT);
-      height = aspect ? width / aspect : width * 0.6;
-    } else {
-      width = Math.min(maxW, 400 * PX_TO_PT);
-      height = width * 0.6;
-    }
-  } else if (width && !height && aspect) {
-    height = width / aspect;
-  } else if (height && !width && aspect) {
-    width = height * aspect;
-  }
-
-  if (!width) width = Math.min(maxW, 300 * PX_TO_PT);
-  if (!height) height = aspect ? width / aspect : width * 0.6;
-
-  width = Math.max(minW, Math.min(width, maxWidthStyle));
-  height = Math.max(minH, Math.min(height, maxH));
-
-  const shouldCapToContent = !(widthSpecified && heightSpecified);
-  if (shouldCapToContent && width > maxW) {
-    const scale = maxW / width;
-    width = maxW;
-    height = height * scale;
-  }
-
-  const svgScale = Number.isFinite(ctx?.options?.svgScale) ? ctx.options.svgScale : 2;
-  const svgDpi = Number.isFinite(ctx?.options?.svgDpi) ? ctx.options.svgDpi : 72;
-  const renderScale = svgScale > 0 ? svgScale : 1;
-  const widthPx = Math.max(1, Math.round((width / PX_TO_PT) * renderScale));
-  const heightPx = Math.max(1, Math.round((height / PX_TO_PT) * renderScale));
-  const svgText = serializeSvg(node);
-  if (process.env.HTML_TO_PDF_DEBUG_SVG) {
-    const fs = require('fs');
-    const debugPath = process.env.HTML_TO_PDF_DEBUG_SVG;
-    fs.writeFileSync(debugPath, svgText);
-  }
-
-  let buf;
-  if (!measureOnly) {
-    try {
-      const fitTo =
-        widthPx > 0
-          ? { mode: 'width', value: widthPx }
-          : heightPx > 0
-          ? { mode: 'height', value: heightPx }
-          : undefined;
-      const resvg = new Resvg(svgText, {
-        imageRendering: 0,
-        textRendering: 2,
-        shapeRendering: 2,
-        dpi: svgDpi,
-        ...(fitTo ? { fitTo } : undefined),
-      });
-      buf = Buffer.from(resvg.render().asPng());
-    } catch (err) {
-      if (!ignoreInvalid) console.error('Inline SVG render failed:', err.message || err);
-      return;
-    }
-  }
-
-  const totalWidth = width + (hasBorder ? borderWidth * 2 : 0);
-  const totalHeight = height + (hasBorder ? borderWidth * 2 : 0);
-  layout.ensureSpace(totalHeight);
-  const align = textAlign(styles);
-  let x = layout.x;
-  if (align === 'center') x = layout.x + (layout.contentWidth() - totalWidth) / 2;
-  else if (align === 'right') x = layout.x + layout.contentWidth() - totalWidth;
-
-  if (!measureOnly) {
-    try {
-      const imgX = x + (hasBorder ? borderWidth : 0);
-      const imgY = layout.y + (hasBorder ? borderWidth : 0);
-      if (hasBorder) {
-        const inset = borderWidth / 2;
-        doc.save().lineWidth(borderWidth).strokeColor(borderPaint);
-        if (borderStyle === 'dashed') {
-          doc.dash(borderWidth * 2, { space: borderWidth * 2 });
-        } else if (borderStyle === 'dotted') {
-          doc.dash(borderWidth, { space: borderWidth });
-        }
-        doc.rect(x + inset, layout.y + inset, totalWidth - borderWidth, totalHeight - borderWidth).stroke();
-        doc.undash().restore();
-      }
-      doc.image(buf, imgX, imgY, { width, height });
-    } catch (err) {
-      if (!ignoreInvalid) throw err;
-      return;
-    }
-  }
-
-  layout.cursorToNextLine(totalHeight);
-}
-
-function measureLineWidth(line, doc) {
-  let width = 0;
-  for (const run of line) {
-    const text = run.text || '';
-    if (!text) continue;
-    const size = styleNumber(run.styles || {}, 'font-size', BASE_PT);
-    const letterSpacing = styleNumber(run.styles || {}, 'letter-spacing', 0, { baseSize: size });
-    const wordSpacing = styleNumber(run.styles || {}, 'word-spacing', 0, { baseSize: size });
-    selectFontForInline(doc, run.styles || {}, !!run.bold, !!run.italic, size);
-    const spaces = (text.match(/ /g) || []).length;
-    width += doc.widthOfString(text, { characterSpacing: letterSpacing }) + wordSpacing * spaces;
-  }
-  return width;
-}
-
-function estimateNodeWidth(node, doc) {
-  if (!node) return 0;
-  if (node.type === 'text') {
-    const text = node.text || '';
-    if (!text) return 0;
-    selectFontForInline(doc, {}, false, false, BASE_PT);
-    return doc.widthOfString(text);
-  }
-  if (node.type !== 'element') return 0;
-  const styles = mergeStyles(node);
-  const padding = styleNumber(styles, 'padding', 0);
-  const padL = styleNumber(styles, 'padding-left', padding);
-  const padR = styleNumber(styles, 'padding-right', padding);
-  const borderWidth = styleNumber(styles, 'border-width', 0);
-  const borderL = styleNumber(styles, 'border-left-width', borderWidth);
-  const borderR = styleNumber(styles, 'border-right-width', borderWidth);
-  const lines = collectLineRuns(node, styles);
-  let maxWidth = 0;
-  for (const line of lines) {
-    maxWidth = Math.max(maxWidth, measureLineWidth(line, doc));
-  }
-  const widthEps = 1;
-  return maxWidth + padL + padR + borderL + borderR + widthEps;
-}
-
-function parseFlexGrow(styles) {
-  const grow = styles ? styles['flex-grow'] : null;
-  if (grow != null) {
-    const num = parseFloat(grow);
-    if (Number.isFinite(num)) return num;
-  }
-  const flex = styles ? styles.flex : null;
-  if (flex) {
-    const first = String(flex).trim().split(/\s+/)[0];
-    const num = parseFloat(first);
-    if (Number.isFinite(num)) return num;
-  }
-  return 0;
-}
-
-async function renderFlexRow(children, ctx, { startX, startY, width, gap, rowGap, bottomMargin, justify, wrap }) {
-  const { doc } = ctx;
-  const measureOnly = !!ctx?.measureOnly;
-  const debugInline = process.env.HTML_TO_PDF_DEBUG === '1';
-  if (!children.length) return 0;
-  const baseGap = Number.isFinite(gap) ? gap : 0;
-  const rowSpace = Number.isFinite(rowGap) ? rowGap : baseGap;
-  const count = children.length;
-  const available = Math.max(0, width - baseGap * Math.max(0, count - 1));
-  const items = children.map((child) => {
-    const childStyles = child.styles || {};
-    const basis = styleNumber(childStyles, 'flex-basis', null, { percentBase: width });
-    const explicitWidth = styleNumber(childStyles, 'width', null, { percentBase: width });
-    const baseWidth = basis ?? explicitWidth ?? estimateNodeWidth(child, doc);
-    const grow = parseFlexGrow(childStyles);
-    return { child, baseWidth: Math.max(0, baseWidth || 0), grow, hasExplicit: basis != null || explicitWidth != null };
-  });
-
-  let totalBase = items.reduce((sum, item) => sum + item.baseWidth, 0);
-  const totalGrow = items.reduce((sum, item) => sum + (item.grow || 0), 0);
-  let widths = items.map((item) => item.baseWidth);
-
-  const justifyValue = String(justify || 'flex-start').toLowerCase();
-  const canEven = ['space-between', 'space-around', 'space-evenly'].includes(justifyValue);
-  const equalWidth = count ? available / count : 0;
-  const allAuto = items.every((item) => !item.hasExplicit && (!item.grow || item.grow === 0));
-  if (canEven && allAuto && equalWidth > 0 && items.every((item) => item.baseWidth <= equalWidth)) {
-    widths = items.map(() => equalWidth);
-    totalBase = available;
-  }
-
-  if (wrap && String(wrap).toLowerCase() !== 'nowrap') {
-    let maxY = startY;
-    let rowY = startY;
-    let rowH = 0;
-    let x = startX;
-    for (let i = 0; i < count; i++) {
-      const child = children[i];
-      let childWidth = Math.max(0, widths[i] || 0);
-      if (childWidth > width) childWidth = width;
-      if (x > startX && x + childWidth > startX + width) {
-        rowY += rowH + rowSpace;
-        x = startX;
-        rowH = 0;
-      }
-      const right = doc.page.width - (x + childWidth);
-      const childLayout = new Layout(doc, {
-        margins: { left: x, right, top: rowY, bottom: bottomMargin },
-        measureOnly,
-      });
-      childLayout.atStartOfPage = false;
-      await renderNode(child, { doc, layout: childLayout, options: ctx.options, measureOnly });
-      const childHeight = childLayout.y - rowY;
-      if (debugInline && child?.tag === 'div') {
-        console.log('[flex-item]', {
-          tag: child.tag,
-          class: child.attrs?.class || '',
-          childHeight,
-          rowY,
-          x,
-          childWidth,
-          containerWidth: width,
-        });
-      }
-      rowH = Math.max(rowH, childHeight);
-      maxY = Math.max(maxY, rowY + rowH);
-      x += childWidth + baseGap;
-    }
-    return maxY - startY;
-  }
-
-  if (totalGrow > 0 && available > totalBase) {
-    const extra = available - totalBase;
-    widths = items.map((item) => item.baseWidth + extra * (item.grow / totalGrow));
-    totalBase = available;
-  } else if (totalBase > available && totalBase > 0) {
-    const scale = available / totalBase;
-    widths = widths.map((w) => w * scale);
-    totalBase = available;
-  }
-
-  if (widths.every((w) => w <= 0)) {
-    const fallback = count ? available / count : 0;
-    widths = widths.map(() => fallback);
-    totalBase = available;
-  }
-
-  const baseTotal = totalBase + baseGap * Math.max(0, count - 1);
-  const remaining = Math.max(0, width - baseTotal);
-  let offset = 0;
-  let actualGap = baseGap;
-  if (justifyValue === 'flex-end' || justifyValue === 'end') {
-    offset = remaining;
-  } else if (justifyValue === 'center') {
-    offset = remaining / 2;
-  } else if (justifyValue === 'space-between') {
-    if (count > 1) actualGap = baseGap + remaining / (count - 1);
-  } else if (justifyValue === 'space-around') {
-    if (count > 0) {
-      const add = remaining / count;
-      actualGap = baseGap + add;
-      offset = actualGap / 2;
-    }
-  } else if (justifyValue === 'space-evenly') {
-    if (count > 0) {
-      const add = remaining / (count + 1);
-      actualGap = baseGap + add;
-      offset = actualGap;
-    }
-  }
-
-  let maxHeight = 0;
-  let x = startX + offset;
-  for (let i = 0; i < count; i++) {
-    const child = children[i];
-    const childWidth = Math.max(0, widths[i] || 0);
-    const right = doc.page.width - (x + childWidth);
-    const childLayout = new Layout(doc, {
-      margins: { left: x, right, top: startY, bottom: bottomMargin },
-      measureOnly,
-    });
-    childLayout.atStartOfPage = false;
-    await renderNode(child, { doc, layout: childLayout, options: ctx.options, measureOnly });
-    maxHeight = Math.max(maxHeight, childLayout.y - startY);
-    x += childWidth + actualGap;
-  }
-  return maxHeight;
-}
-
-async function renderGrid(children, ctx, { startX, startY, width, columns, colGap, rowGap, bottomMargin, alignItems }) {
-  const { doc } = ctx;
-  const measureOnly = !!ctx?.measureOnly;
-  const debug = process.env.HTML_TO_PDF_DEBUG === '1';
-  if (!children.length) return 0;
-  const colWidths =
-    Array.isArray(columns) && columns.length
-      ? columns.map((w) => Math.max(0, w || 0))
-      : Array.from({ length: Math.max(1, columns || 1) }, () =>
-          Math.max(0, (width - colGap * (Math.max(1, columns || 1) - 1)) / Math.max(1, columns || 1))
-        );
-  const cols = colWidths.length;
-  const rows = [];
-  let colIndex = 0;
-  let rowY = startY;
-  let currentRow = { y: rowY, height: 0, items: [] };
-
-  for (const child of children) {
-    let span = parseGridSpan(child.styles?.['grid-column']);
-    if (span > cols) span = cols;
-    if (colIndex + span > cols && currentRow.items.length) {
-      rows.push(currentRow);
-      rowY += currentRow.height + rowGap;
-      colIndex = 0;
-      currentRow = { y: rowY, height: 0, items: [] };
-    }
-
-    const cellWidth = colWidths.slice(colIndex, colIndex + span).reduce((sum, w) => sum + w, 0) + colGap * (span - 1);
-    const x = startX + colWidths.slice(0, colIndex).reduce((sum, w) => sum + w, 0) + colGap * colIndex;
-
-    const right = doc.page.width - (x + cellWidth);
-    const measureLayout = new Layout(doc, {
-      margins: { left: x, right, top: rowY, bottom: bottomMargin },
-      measureOnly: true,
-    });
-    measureLayout.atStartOfPage = false;
-    await renderNode(child, { doc, layout: measureLayout, options: ctx.options, measureOnly: true });
-    const childHeight = Math.max(0, measureLayout.y - rowY);
-    if (debug && !measureOnly) {
-      console.log('[grid-item-measure]', {
-        tag: child.tag,
-        className: child.attrs?.class || '',
-        rowY,
-        colIndex,
-        span,
-        cellWidth,
-        childHeight,
-      });
-    }
-
-    currentRow.items.push({ child, x, width: cellWidth, height: childHeight });
-    currentRow.height = Math.max(currentRow.height, childHeight);
-    colIndex += span;
-  }
-
-  if (currentRow.items.length) {
-    rows.push(currentRow);
-  }
-
-  const align = String(alignItems || 'stretch').toLowerCase();
-  const totalHeight = rows.reduce((sum, row) => sum + row.height, 0) + Math.max(0, rows.length - 1) * rowGap;
-
-  if (measureOnly) return totalHeight;
-
-  let maxY = startY;
-  for (const row of rows) {
-    if (!row.items || !row.items.length) continue;
-    for (const item of row.items) {
-      const right = doc.page.width - (item.x + item.width);
-      const childLayout = new Layout(doc, {
-        margins: { left: item.x, right, top: row.y, bottom: bottomMargin },
-      });
-      childLayout.atStartOfPage = false;
-      const minHeight = align === 'stretch' ? row.height : 0;
-      await renderNode(item.child, {
-        doc,
-        layout: childLayout,
-        options: ctx.options,
-        minHeight: minHeight || undefined,
-      });
-      if (debug) {
-        console.log('[grid-item-render]', {
-          tag: item.child.tag,
-          className: item.child.attrs?.class || '',
-          x: item.x,
-          y: item.y,
-          width: item.width,
-          minHeight,
-          childY: childLayout.y,
-        });
-      }
-    }
-    maxY = Math.max(maxY, row.y + row.height);
-  }
-
-  return maxY - startY;
-}
-
 async function renderNode(node, ctx) {
   const { doc, layout } = ctx;
   const measureOnly = !!ctx?.measureOnly;
@@ -1142,15 +471,15 @@ async function renderNode(node, ctx) {
       layout.ensureSpace(boxH);
 
       if (!measureOnly) {
-        if (bg && boxH > 0) {
-          doc.save().rect(blockX, startY, blockWidth, boxH).fill(bg).restore();
-        }
-        if (borderLeft && boxH > 0) {
-          doc
-            .save()
-            .rect(blockX, startY, borderLeft, boxH)
-            .fill(borderLeftPaint || '#333333')
-            .restore();
+        if ((bg || borderLeft) && boxH > 0) {
+          drawBox(doc, blockX, startY, blockWidth, boxH, {
+            bg,
+            borderTop: { width: 0, color: null },
+            borderRight: { width: 0, color: null },
+            borderBottom: { width: 0, color: null },
+            borderLeft: { width: borderLeft, color: borderLeftPaint },
+            radius: 0,
+          });
         }
 
         doc.fillColor(color);
@@ -1179,14 +508,45 @@ async function renderNode(node, ctx) {
       return;
     }
 
-    if (paddingTop) layout.y += paddingTop;
-
     const originalX = layout.x;
     const originalContentWidth = layout.contentWidth;
     const blockX = layout.x + marginLeft;
     const blockWidth = Math.max(0, originalContentWidth() - marginLeft - marginRight);
-    layout.x = blockX + paddingLeft;
-    layout.contentWidth = () => blockWidth - paddingLeft - paddingRight;
+    const contentX = blockX + paddingLeft;
+    const contentW = blockWidth - paddingLeft - paddingRight;
+
+    // Measure-then-prepaint: draw bg/border BEFORE content so text is visible
+    if (!measureOnly && (bg || borderLeft)) {
+      const measureLayout = new Layout(doc, {
+        margins: {
+          left: contentX,
+          right: doc.page.width - (contentX + contentW),
+          top: startY + paddingTop,
+          bottom: layout.marginBottom,
+        },
+        measureOnly: true,
+      });
+      measureLayout.atStartOfPage = false;
+      for (const child of node.children || []) {
+        await renderNode(child, { doc, layout: measureLayout, options: ctx.options, measureOnly: true });
+      }
+      const measuredContent = Math.max(0, measureLayout.y - (startY + paddingTop));
+      const boxH = paddingTop + measuredContent + paddingBottom;
+      if (boxH > 0) {
+        drawBox(doc, blockX, startY, blockWidth, boxH, {
+          bg,
+          borderTop: { width: 0, color: null },
+          borderRight: { width: 0, color: null },
+          borderBottom: { width: 0, color: null },
+          borderLeft: { width: borderLeft, color: borderLeftPaint },
+          radius: 0,
+        });
+      }
+    }
+
+    if (paddingTop) layout.y += paddingTop;
+    layout.x = contentX;
+    layout.contentWidth = () => contentW;
 
     for (const child of node.children || []) {
       await renderNode(child, ctx);
@@ -1196,23 +556,6 @@ async function renderNode(node, ctx) {
     layout.x = originalX;
 
     if (paddingBottom) layout.cursorToNextLine(paddingBottom);
-
-    const endY = layout.y;
-    const boxH = endY - startY;
-    const w = blockWidth;
-
-    if (!measureOnly && (bg || borderLeft) && boxH > 0) {
-      if (bg) {
-        doc.save().rect(blockX, startY, w, boxH).fill(bg).restore();
-      }
-      if (borderLeft) {
-        doc
-          .save()
-          .rect(blockX, startY, borderLeft, boxH)
-          .fill(borderLeftPaint || '#333333')
-          .restore();
-      }
-    }
 
     finishBlock();
     applyPageBreakAfter(styles, ctx, node);
@@ -1336,15 +679,15 @@ async function renderNode(node, ctx) {
     if (!useInlineBoxes) layout.ensureSpace(boxHeight);
 
     if (!measureOnly && !useInlineBoxes) {
-      if (bg && boxHeight > 0) {
-        doc.save().rect(layout.x, layout.y, layout.contentWidth(), boxHeight).fill(bg).restore();
-      }
-      if (borderLeft && boxHeight > 0) {
-        doc
-          .save()
-          .rect(layout.x, layout.y, borderLeft, boxHeight)
-          .fill(borderLeftPaint || '#333333')
-          .restore();
+      if ((bg || borderLeft) && boxHeight > 0) {
+        drawBox(doc, layout.x, layout.y, layout.contentWidth(), boxHeight, {
+          bg,
+          borderTop: { width: 0, color: null },
+          borderRight: { width: 0, color: null },
+          borderBottom: { width: 0, color: null },
+          borderLeft: { width: borderLeft, color: borderLeftPaint },
+          radius: 0,
+        });
       }
 
       doc.fillColor(color);
@@ -1356,24 +699,24 @@ async function renderNode(node, ctx) {
     if (!measureOnly && !useInlineBoxes) {
       for (const run of runs) {
         const s = { ...styles, ...(run.styles || {}) };
-              selectFontForInline(doc, s, !!run.bold, !!run.italic);
-              const ls = styleNumber(s, 'letter-spacing', null, { baseSize: size });
-              const ws = styleNumber(s, 'word-spacing', null, { baseSize: size });
-              const linkOpts = getRunLinkTextOptions(run, {
-                enableInternalAnchors: ctx?.options?.enableInternalAnchors,
-              });
-              const textOptions = {
-                width: availableWidth,
-                align,
-                lineGap: gap,
-                continued: true,
-                underline: !!run.underline,
-                ...linkOpts,
-              };
-              if (ls != null) textOptions.characterSpacing = ls;
-              if (ws != null) textOptions.wordSpacing = ws;
-              doc.fillColor(styleColor(s, 'color', color)).text(run.text, textOptions);
-            }
+        selectFontForInline(doc, s, !!run.bold, !!run.italic);
+        const ls = styleNumber(s, 'letter-spacing', null, { baseSize: size });
+        const ws = styleNumber(s, 'word-spacing', null, { baseSize: size });
+        const linkOpts = getRunLinkTextOptions(run, {
+          enableInternalAnchors: ctx?.options?.enableInternalAnchors,
+        });
+        const textOptions = {
+          width: availableWidth,
+          align,
+          lineGap: gap,
+          continued: true,
+          underline: !!run.underline,
+          ...linkOpts,
+        };
+        if (ls != null) textOptions.characterSpacing = ls;
+        if (ws != null) textOptions.wordSpacing = ws;
+        doc.fillColor(styleColor(s, 'color', color)).text(run.text, textOptions);
+      }
       doc.text('', { continued: false });
     }
 
@@ -1508,67 +851,14 @@ async function renderNode(node, ctx) {
       const boxH = borderTop.width + paddingTop + measuredContent + paddingBottom + borderBottom.width;
       const desiredBoxH = minHeight != null ? Math.max(boxH, minHeight) : boxH;
       if (desiredBoxH > 0) {
-        const uniformBorderWidth =
-          borderTop.width === borderRight.width &&
-          borderTop.width === borderBottom.width &&
-          borderTop.width === borderLeft.width;
-        const uniformBorderColor =
-          borderTop.color === borderRight.color &&
-          borderTop.color === borderBottom.color &&
-          borderTop.color === borderLeft.color;
-        const anyBorderWidth = borderTop.width || borderRight.width || borderBottom.width || borderLeft.width;
-        const anyBorderColor = borderTop.color || borderRight.color || borderBottom.color || borderLeft.color;
-        const roundedStrokeWidth = uniformBorderWidth ? borderTop.width : anyBorderWidth;
-        const roundedStrokeColor = uniformBorderColor ? borderTop.color : anyBorderColor;
-        const useRounded = radius > 0 && (bg || anyBorderWidth);
-
-        if (useRounded) {
-          const r = Math.min(radius, blockWidth / 2, desiredBoxH / 2);
-          if (bg) doc.save().roundedRect(blockX, startY, blockWidth, desiredBoxH, r).fill(bg).restore();
-          if (roundedStrokeWidth) {
-            const inset = Math.max(0, roundedStrokeWidth / 2);
-            const insetW = Math.max(0, blockWidth - roundedStrokeWidth);
-            const insetH = Math.max(0, desiredBoxH - roundedStrokeWidth);
-            const insetR = Math.max(0, r - inset);
-            doc
-              .save()
-              .lineWidth(roundedStrokeWidth)
-              .strokeColor(roundedStrokeColor || '#333333')
-              .roundedRect(blockX + inset, startY + inset, insetW, insetH, insetR)
-              .stroke()
-              .restore();
-          }
-        } else {
-          if (bg) doc.save().rect(blockX, startY, blockWidth, desiredBoxH).fill(bg).restore();
-          if (borderTop.width) {
-            doc
-              .save()
-              .rect(blockX, startY, blockWidth, borderTop.width)
-              .fill(borderTop.color || '#333333')
-              .restore();
-          }
-          if (borderRight.width) {
-            doc
-              .save()
-              .rect(blockX + blockWidth - borderRight.width, startY, borderRight.width, desiredBoxH)
-              .fill(borderRight.color || '#333333')
-              .restore();
-          }
-          if (borderBottom.width) {
-            doc
-              .save()
-              .rect(blockX, startY + desiredBoxH - borderBottom.width, blockWidth, borderBottom.width)
-              .fill(borderBottom.color || '#333333')
-              .restore();
-          }
-          if (borderLeft.width) {
-            doc
-              .save()
-              .rect(blockX, startY, borderLeft.width, desiredBoxH)
-              .fill(borderLeft.color || '#333333')
-              .restore();
-          }
-        }
+        drawBox(doc, blockX, startY, blockWidth, desiredBoxH, {
+          bg,
+          borderTop,
+          borderRight,
+          borderBottom,
+          borderLeft,
+          radius,
+        });
       }
     }
 
@@ -1607,7 +897,7 @@ async function renderNode(node, ctx) {
           }
           usedHeight = layout.y - contentStartY;
         } else {
-          usedHeight = await renderFlexRow(children, childCtx, {
+          usedHeight = await renderFlexRow(children, { ...childCtx, _isInlineDisplay: isInlineDisplay }, {
             startX: contentX,
             startY: contentStartY,
             width: contentWidth,
@@ -1750,79 +1040,20 @@ async function renderNode(node, ctx) {
     }
     const boxH = endY - startY + paddingBottom + borderBottom.width;
 
-    const uniformBorderWidth =
-      borderTop.width === borderRight.width &&
-      borderTop.width === borderBottom.width &&
-      borderTop.width === borderLeft.width;
-    const uniformBorderColor =
-      borderTop.color === borderRight.color &&
-      borderTop.color === borderBottom.color &&
-      borderTop.color === borderLeft.color;
-    const anyBorderWidth = borderTop.width || borderRight.width || borderBottom.width || borderLeft.width;
-    const anyBorderColor = borderTop.color || borderRight.color || borderBottom.color || borderLeft.color;
-    const roundedStrokeWidth = uniformBorderWidth ? borderTop.width : anyBorderWidth;
-    const roundedStrokeColor = uniformBorderColor ? borderTop.color : anyBorderColor;
-    const useRounded = radius > 0 && (bg || anyBorderWidth);
-
     if (
       !measureOnly &&
       !prepaint &&
       (bg || borderTop.width || borderRight.width || borderBottom.width || borderLeft.width) &&
       boxH > 0
     ) {
-      const x = layout.x;
-      const w = layout.contentWidth();
-      if (useRounded) {
-        const r = Math.min(radius, w / 2, boxH / 2);
-        if (bg) {
-          doc.save().roundedRect(x, startY, w, boxH, r).fill(bg).restore();
-        }
-        if (roundedStrokeWidth) {
-          const inset = Math.max(0, roundedStrokeWidth / 2);
-          const insetW = Math.max(0, w - roundedStrokeWidth);
-          const insetH = Math.max(0, boxH - roundedStrokeWidth);
-          const insetR = Math.max(0, r - inset);
-          doc
-            .save()
-            .lineWidth(roundedStrokeWidth)
-            .strokeColor(roundedStrokeColor || '#333333')
-            .roundedRect(x + inset, startY + inset, insetW, insetH, insetR)
-            .stroke()
-            .restore();
-        }
-      } else {
-        if (bg) {
-          doc.save().rect(x, startY, w, boxH).fill(bg).restore();
-        }
-        if (borderTop.width) {
-          doc
-            .save()
-            .rect(x, startY, w, borderTop.width)
-            .fill(borderTop.color || '#333333')
-            .restore();
-        }
-        if (borderRight.width) {
-          doc
-            .save()
-            .rect(x + w - borderRight.width, startY, borderRight.width, boxH)
-            .fill(borderRight.color || '#333333')
-            .restore();
-        }
-        if (borderBottom.width) {
-          doc
-            .save()
-            .rect(x, startY + boxH - borderBottom.width, w, borderBottom.width)
-            .fill(borderBottom.color || '#333333')
-            .restore();
-        }
-        if (borderLeft.width) {
-          doc
-            .save()
-            .rect(x, startY, borderLeft.width, boxH)
-            .fill(borderLeft.color || '#333333')
-            .restore();
-        }
-      }
+      drawBox(doc, layout.x, startY, layout.contentWidth(), boxH, {
+        bg,
+        borderTop,
+        borderRight,
+        borderBottom,
+        borderLeft,
+        radius,
+      });
     }
 
     layout.ensureSpace(paddingBottom + borderBottom.width);

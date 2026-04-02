@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { mergeStyles, styleNumber, styleColor, parsePx, textAlign } = require('../pdf/style');
+const { mergeStyles, styleNumber, styleColor, parsePx, textAlign, PX_TO_PT } = require('../pdf/style');
 const { Resvg } = require('@resvg/resvg-js');
 
 function borderInfo(styles) {
@@ -75,7 +75,9 @@ async function renderImage(node, ctx) {
       if (payload.includes('%')) {
         try {
           payload = decodeURIComponent(payload);
-        } catch {}
+        } catch (err) {
+          if (process.env.HTML_TO_PDF_DEBUG === '1') console.warn('[image] decodeURIComponent failed:', err.message || err);
+        }
       }
       if (isBase64) {
         payload = payload.replace(/\s+/g, '');
@@ -167,7 +169,9 @@ async function renderImage(node, ctx) {
         intrinsicHeight,
       });
     }
-  } catch {}
+  } catch (err) {
+    if (process.env.HTML_TO_PDF_DEBUG === '1') console.warn('[image] openImage failed:', err.message || err);
+  }
 
   const maxW = layout.contentWidth();
   const maxH = Number.isFinite(styleNumber(styles, 'max-height', Infinity))
@@ -176,7 +180,6 @@ async function renderImage(node, ctx) {
   const minW = styleNumber(styles, 'min-width', 0);
   const minH = styleNumber(styles, 'min-height', 0);
   const maxWidthStyle = styleNumber(styles, 'max-width', widthSpecified ? Infinity : maxW);
-  const PX_TO_PT = 72 / 96;
   const intrinsicWidthPt = intrinsicWidth ? intrinsicWidth * PX_TO_PT : null;
   const intrinsicHeightPt = intrinsicHeight ? intrinsicHeight * PX_TO_PT : null;
 
