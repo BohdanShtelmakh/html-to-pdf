@@ -53,12 +53,16 @@
     "LICENSE"
   ],
   "scripts": {
-    "test": "node test/run-tests.js"
+    "test": "node test/run-tests.js",
+    "bench": "node bench/run.js"
   },
   "dependencies": {
+    "@resvg/resvg-js": "^2.6.2",
     "css": "^3.0.0",
     "jsdom": "^20.0.0",
-    "pdfkit": "^0.17.2",
-    "@resvg/resvg-js": "^2.6.2"
+    "pdfkit": "^0.17.2"
+  },
+  "devDependencies": {
+    "puppeteer": "^24.40.0"
   }
 }

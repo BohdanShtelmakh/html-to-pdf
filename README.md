@@ -55,12 +55,23 @@ Chrome-based tools like Puppeteer or Playwright are slow for backend PDF generat
 
 **html-pdf-lite** is built for speed-first PDF generation.
 
-Typical performance:
+### Benchmarks
 
-| Engine | Typical Time |
-|:------ |------------:|
-| Puppeteer | 2–4s |
-| html-pdf-lite | **200–400ms** |
+Measured on Node 22, A4 output, 15 iterations (warm):
+
+| Template | html-pdf-lite | Puppeteer | Speedup | PDF Size |
+|:---------|-------------:|----------:|--------:|---------:|
+| Simple (h1 + p) | 61ms | 99ms | 1.6x | 1.4 KB vs 17 KB |
+| Invoice (flex + table) | 89ms | 98ms | 1.1x | 37 KB vs 84 KB |
+| Report (text-heavy) | 70ms | 95ms | 1.4x | 15 KB vs 32 KB |
+| Receipt (small table) | 63ms | 92ms | 1.5x | 1.8 KB vs 29 KB |
+| Styled (grid + cards) | 70ms | 100ms | 1.4x | 16 KB vs 41 KB |
+| Large table (50×6) | 87ms | 114ms | 1.3x | 18 KB vs 118 KB |
+| **Cold start** | **86ms** | **654ms** | **7.6x** | — |
+
+PDFs are **52–94% smaller**. Cold start is **7.6x faster** — critical for serverless.
+
+Run `npm run bench` to reproduce (requires `npm i -D puppeteer`).
 
 This makes it perfect for:
 - APIs

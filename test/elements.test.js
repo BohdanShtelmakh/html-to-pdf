@@ -102,6 +102,32 @@ async function run() {
     </figure>
   `);
   assertBuffer(figure, 'figure with caption');
+
+  // Line break in paragraph
+  const brInP = await renderPdfFromHtml('<p>Line 1<br>Line 2</p>');
+  assertBuffer(brInP, 'br in paragraph');
+
+  // Multiple line breaks in div
+  const brInDiv = await renderPdfFromHtml('<div>A<br>B<br>C</div>');
+  assertBuffer(brInDiv, 'br in div');
+
+  // Line break in address-like content
+  const address = await renderPdfFromHtml(`
+    <div>
+      John Smith<br/>
+      123 Main Street<br/>
+      New York, NY 10001
+    </div>
+  `);
+  assertBuffer(address, 'address with br');
+
+  // Line break inside inline elements
+  const brInSpan = await renderPdfFromHtml('<p><strong>Bold line</strong><br><em>Italic line</em></p>');
+  assertBuffer(brInSpan, 'br between inline elements');
+
+  // Self-closing br
+  const selfClosing = await renderPdfFromHtml('<p>A<br/>B</p>');
+  assertBuffer(selfClosing, 'self-closing br');
 }
 
 module.exports = { name: 'elements', run };

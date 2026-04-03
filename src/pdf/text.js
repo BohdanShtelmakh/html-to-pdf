@@ -86,6 +86,10 @@ function inlineRuns(node, parentStyles = {}) {
     if (n.type !== 'element') return;
 
     const tag = (n.tag || '').toLowerCase();
+    if (tag === 'br') {
+      runs.push({ text: '\n', ...inherited, isLineBreak: true });
+      return;
+    }
     const styles = { ...inherited.styles, ...mergeStyles(n) };
     const next = { ...inherited, styles };
 
@@ -134,8 +138,12 @@ function gatherPlainText(node) {
   let out = '';
   function walk(n) {
     if (!n) return;
-    if (n.type === 'text') out += n.text || '';
-    else if (n.type === 'element') (n.children || []).forEach(walk);
+    if (n.type === 'text') { out += n.text || ''; return; }
+    if (n.type === 'element') {
+      const tag = (n.tag || '').toLowerCase();
+      if (tag === 'br') { out += '\n'; return; }
+      (n.children || []).forEach(walk);
+    }
   }
   walk(node);
   return out;

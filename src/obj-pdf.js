@@ -52,8 +52,14 @@ function normalizeFamilyEntry(value) {
 async function makePdf(json, options = {}) {
   const defaultBodyMargin = parsePxWithOptions('8px', 8);
   const bodyMargins = parseMarginBox(json?.styles, defaultBodyMargin);
+  const bodyPadding = {
+    top: parsePxWithOptions(json?.styles?.['padding-top'], 0),
+    right: parsePxWithOptions(json?.styles?.['padding-right'], 0),
+    bottom: parsePxWithOptions(json?.styles?.['padding-bottom'], 0),
+    left: parsePxWithOptions(json?.styles?.['padding-left'], 0),
+  };
   const pageMargins = hasMarginStyles(json?.page) ? parseMarginBox(json.page, 0) : null;
-  const effectiveMargins = pageMargins
+  const base = pageMargins
     ? {
         top: pageMargins.top + bodyMargins.top,
         right: pageMargins.right + bodyMargins.right,
@@ -61,6 +67,12 @@ async function makePdf(json, options = {}) {
         left: pageMargins.left + bodyMargins.left,
       }
     : bodyMargins;
+  const effectiveMargins = {
+    top: base.top + bodyPadding.top,
+    right: base.right + bodyPadding.right,
+    bottom: base.bottom + bodyPadding.bottom,
+    left: base.left + bodyPadding.left,
+  };
   const minMargins = {
     top: 6,
     right: 0,

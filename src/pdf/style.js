@@ -19,7 +19,7 @@ function tagDefaults(tag) {
     case 'h6':
       return { size: em(0.75), mt: em(2), mb: em(2), lh: 1.45, bold: true };
     case 'p':
-      return { size: BASE_PT, mt: 12, mb: 4, lh: BODY_LH, bold: false };
+      return { size: BASE_PT, mt: em(1), mb: em(1), lh: BODY_LH, bold: false };
     case 'pre':
     case 'code':
       return { size: em(0.92), mt: em(1), mb: em(1), lh: 1.35, bold: false };
@@ -37,7 +37,7 @@ function tagDefaults(tag) {
     case 'root':
       return { size: BASE_PT, mt: 0, mb: 0, lh: BODY_LH, bold: false };
     default:
-      return { size: BASE_PT, mt: 0, mb: em(0.6), lh: BODY_LH, bold: false };
+      return { size: BASE_PT, mt: 0, mb: 0, lh: BODY_LH, bold: false };
   }
 }
 
@@ -255,7 +255,7 @@ function lineHeightValue(styles, fontSize, tag) {
 
   if (/^-?\d+(\.\d+)?$/.test(str)) {
     const num = parseFloat(str);
-    return num > 0 && num < 10 ? fontSize * num : num;
+    return num > 0 && num < 10 ? fontSize * num * CHROME_LH_FACTOR : num;
   }
 
   return parsePxWithOptions(str, fontSize * defaultLineHeightFor(tag), { base: fontSize, percentBase: fontSize });

@@ -40,11 +40,13 @@ const INLINE_TAGS = new Set([
   'sup',
   'code',
   'a',
+  'br',
 ]);
 
 function isInlineDisplay(tag, styles = {}) {
   const display = String(styles.display || '').toLowerCase();
   if (display === 'inline' || display === 'inline-block') return true;
+  if (display === 'block' || display === 'flex' || display === 'grid' || display === 'none') return false;
   return INLINE_TAGS.has(tag);
 }
 
@@ -60,6 +62,11 @@ function normalizeRuns(runs, collapse) {
   const out = [];
   let prevSpace = false;
   for (const run of runs) {
+    if (run.isLineBreak) {
+      out.push({ ...run, text: '\n' });
+      prevSpace = true;
+      continue;
+    }
     let text = run.text || '';
     text = text.replace(/\s+/g, ' ');
     if (prevSpace) text = text.replace(/^ /, '');
@@ -88,6 +95,94 @@ function isInlineOnly(node) {
 
 function elementChildren(node) {
   return (node.children || []).filter((child) => child.type === 'element');
+}
+
+function containsBr(node) {
+  if (!node || !node.children) return false;
+  for (const child of node.children) {
+    if (child.type === 'element') {
+      if ((child.tag || '').toLowerCase() === 'br') return true;
+      if (containsBr(child)) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * When a parent has mixed block + inline children, group consecutive inline/text/br
+ * nodes into anonymous inline wrapper nodes so they render as a single text block.
+ * This matches how browsers create anonymous block boxes around inline content
+ * that sits alongside block-level siblings.
+ */
+function groupMixedChildren(children, parentStyles) {
+  if (!children || !children.length) return children;
+
+  // Check if there's a mix of block and inline children
+  let hasBlock = false;
+  let hasInline = false;
+  for (const child of children) {
+    if (child.type === 'text') { hasInline = true; continue; }
+    if (child.type !== 'element') continue;
+    const tag = (child.tag || '').toLowerCase();
+    const styles = mergeStyles(child);
+    if (isInlineDisplay(tag, styles)) hasInline = true;
+    else hasBlock = true;
+  }
+
+  if (!hasBlock || !hasInline) return children;
+
+  const groups = [];
+  let inlineGroup = [];
+
+  function flushInline() {
+    if (!inlineGroup.length) return;
+    // Check if the inline group has any meaningful content
+    const hasContent = inlineGroup.some((n) =>
+      n.type === 'text' ? /\S/.test(n.text || '') : true
+    );
+    if (hasContent) {
+      // Trim leading whitespace-only text nodes (whitespace between block and inline content)
+      while (inlineGroup.length && inlineGroup[0].type === 'text' && !/\S/.test(inlineGroup[0].text || '')) {
+        inlineGroup.shift();
+      }
+      // Trim leading whitespace from first text node
+      if (inlineGroup.length && inlineGroup[0].type === 'text') {
+        inlineGroup[0] = { ...inlineGroup[0], text: (inlineGroup[0].text || '').replace(/^\s+/, '') };
+      }
+      if (!inlineGroup.length) { inlineGroup = []; return; }
+      groups.push({
+        type: 'element',
+        tag: 'div',
+        attrs: {},
+        styles: { ...parentStyles },
+        children: inlineGroup,
+        _anonymous: true,
+      });
+    }
+    inlineGroup = [];
+  }
+
+  for (const child of children) {
+    if (child.type === 'text') {
+      inlineGroup.push(child);
+      continue;
+    }
+    if (child.type !== 'element') {
+      inlineGroup.push(child);
+      continue;
+    }
+    const tag = (child.tag || '').toLowerCase();
+    const styles = mergeStyles(child);
+    if (isInlineDisplay(tag, styles)) {
+      inlineGroup.push(child);
+    } else {
+      flushInline();
+      groups.push(child);
+    }
+  }
+  flushInline();
+
+  return groups;
 }
 
 function hasInlineBoxStyles(styles = {}) {
@@ -175,7 +270,7 @@ function renderInlineRuns(runs, ctx, { baseStyles, align, lineGap, tag }) {
     const measuredTextHeight = doc.heightOfString(text, { lineGap: 0 });
     const textHeight = measuredTextHeight;
     const runLineHeight = lineHeightValue(s, size, tag);
-    const contentH = inlineBox ? Math.max(runLineHeight, measuredTextHeight) : runLineHeight;
+    const contentH = runLineHeight;
     const boxW = textWidth + padL + padR + border * 2;
     const boxH = contentH + padT + padB + border * 2;
     if (debugInline && inlineBox) {
@@ -228,6 +323,8 @@ function renderInlineRuns(runs, ctx, { baseStyles, align, lineGap, tag }) {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     let x = layout.x;
+    if (align === 'right') x = layout.x + contentWidth - line.width;
+    else if (align === 'center') x = layout.x + (contentWidth - line.width) / 2;
     for (const item of line.runs) {
       const yOffset = (line.height - item.boxH) / 2;
       if (!measureOnly) {
@@ -298,29 +395,20 @@ async function renderNode(node, ctx) {
   if (node.type === 'text') {
     const text = node.text || '';
     if (!text) return;
-    if (!measureOnly) {
-      const size = BASE_PT;
-      const gap = lineGapFor(size, {}, 'div');
-      selectFontForInline(doc, {}, false, false, size);
-      const h = doc.heightOfString(text, {
-        width: layout.contentWidth(),
-        lineGap: gap,
-      });
-      layout.ensureSpace(h);
-      doc.x = layout.x;
-      doc.y = layout.y;
-      doc.text(text, { width: layout.contentWidth(), lineGap: gap });
-      layout.cursorToNextLine(h);
-      return;
-    }
     const size = BASE_PT;
     const gap = lineGapFor(size, {}, 'div');
+    const textAlignValue = ctx.inheritedAlign || 'left';
     selectFontForInline(doc, {}, false, false, size);
     const h = doc.heightOfString(text, {
       width: layout.contentWidth(),
       lineGap: gap,
     });
     layout.ensureSpace(h);
+    if (!measureOnly) {
+      doc.x = layout.x;
+      doc.y = layout.y;
+      doc.text(text, { width: layout.contentWidth(), lineGap: gap, align: textAlignValue });
+    }
     layout.cursorToNextLine(h);
     return;
   }
@@ -357,6 +445,7 @@ async function renderNode(node, ctx) {
   registerAnchorDestination(node, ctx);
   const color = styleColor(styles, 'color', '#000');
   const align = textAlign(styles);
+  const alignCtx = align !== 'left' ? { ...childCtx, inheritedAlign: align } : childCtx;
 
   if (display === 'inline' || display === 'inline-block') {
     const size = styleNumber(styles, 'font-size', BASE_PT);
@@ -527,7 +616,8 @@ async function renderNode(node, ctx) {
         measureOnly: true,
       });
       measureLayout.atStartOfPage = false;
-      for (const child of node.children || []) {
+      const groupedBqMeasure = groupMixedChildren(node.children || [], styles);
+      for (const child of groupedBqMeasure) {
         await renderNode(child, { doc, layout: measureLayout, options: ctx.options, measureOnly: true });
       }
       const measuredContent = Math.max(0, measureLayout.y - (startY + paddingTop));
@@ -548,8 +638,9 @@ async function renderNode(node, ctx) {
     layout.x = contentX;
     layout.contentWidth = () => contentW;
 
-    for (const child of node.children || []) {
-      await renderNode(child, ctx);
+    const groupedBq = groupMixedChildren(node.children || [], styles);
+    for (const child of groupedBq) {
+      await renderNode(child, alignCtx);
     }
 
     layout.contentWidth = originalContentWidth;
@@ -637,7 +728,8 @@ async function renderNode(node, ctx) {
     return;
   }
 
-  if (tag === 'p' || tag === 'span' || tag === 'figcaption') {
+  const inlineOnlyNoBr = isInlineOnly(node) && !containsBr(node) && display !== 'flex' && display !== 'grid';
+  if (tag === 'p' || tag === 'span' || tag === 'figcaption' || inlineOnlyNoBr) {
     const size = styleNumber(styles, 'font-size', BASE_PT);
     const gap = lineGapFor(size, styles, tag);
     const runs = normalizeRuns(inlineRuns(node), shouldCollapseWhitespace(styles));
@@ -831,7 +923,8 @@ async function renderNode(node, ctx) {
           measureOnly: true,
         });
         measureLayout.atStartOfPage = false;
-        for (const child of node.children || []) {
+        const groupedMeasure = groupMixedChildren(node.children || [], styles);
+        for (const child of groupedMeasure) {
           await renderNode(child, { doc, layout: measureLayout, options: ctx.options, measureOnly: true });
         }
         measuredContent = Math.max(0, measureLayout.y - contentStartY);
@@ -884,6 +977,7 @@ async function renderNode(node, ctx) {
       const rowGap = styleNumber(styles, 'row-gap', gap);
       const contentWidth = layout.contentWidth();
       const contentX = layout.x;
+      const alignItems = String(styles['align-items'] || 'stretch').toLowerCase();
       let usedHeight = 0;
 
       if (isFlex) {
@@ -892,7 +986,7 @@ async function renderNode(node, ctx) {
           let first = true;
           for (const child of children) {
             if (!first) layout.cursorToNextLine(rowGap);
-            await renderNode(child, childCtx);
+            await renderNode(child, align !== 'left' ? { ...childCtx, inheritedAlign: align } : childCtx);
             first = false;
           }
           usedHeight = layout.y - contentStartY;
@@ -906,6 +1000,7 @@ async function renderNode(node, ctx) {
             bottomMargin: layout.marginBottom,
             justify: justifyContent,
             wrap: flexWrap,
+            alignItems,
           });
         }
       } else {
@@ -913,7 +1008,6 @@ async function renderNode(node, ctx) {
           parseGridTemplateColumns(styles['grid-template-columns'], contentWidth, colGap) ||
           parseGridColumnCount(styles['grid-template-columns']) ||
           1;
-        const alignItems = String(styles['align-items'] || 'stretch').toLowerCase();
         usedHeight = await renderGrid(children, childCtx, {
           startX: contentX,
           startY: contentStartY,
@@ -931,7 +1025,7 @@ async function renderNode(node, ctx) {
       if (inlineOnly) {
         const size = styleNumber(styles, 'font-size', BASE_PT);
         const gap = lineGapFor(size, styles, tag);
-        const runs = inlineRuns(node);
+        const runs = normalizeRuns(inlineRuns(node), shouldCollapseWhitespace(styles));
         const useInlineBoxes = runs.some((run) => runHasInlineBoxStyles(run.styles || {}, styles));
         const hasFrame =
           bg || borderTop.width || borderRight.width || borderBottom.width || borderLeft.width || radius > 0;
@@ -987,27 +1081,40 @@ async function renderNode(node, ctx) {
             const textHeight = singleLine ? doc.currentLineHeight(true) : h;
             const textOffset = hasFrame && singleLine ? Math.max(0, (lineHeight - textHeight) / 2) : 0;
             doc.y = startYInline + textOffset;
-            for (const run of runs) {
-              const s = { ...styles, ...(run.styles || {}) };
-              selectFontForInline(doc, s, !!run.bold, !!run.italic);
-              const linkOpts = getRunLinkTextOptions(run, {
-                enableInternalAnchors: ctx?.options?.enableInternalAnchors,
-              });
-              doc.fillColor(styleColor(s, 'color', '#000')).text(run.text, {
+            // When text contains line breaks, render as single text call for correct alignment
+            const hasLineBreaks = plain.includes('\n');
+            const allSameStyle = !runs.some((r) => r.bold || r.italic || r.href);
+            if (hasLineBreaks && allSameStyle) {
+              selectFontForInline(doc, styles, false, false, size);
+              doc.text(plain, layout.x, startYInline + textOffset, {
                 width: layout.contentWidth(),
                 align,
-                lineGap: singleLine ? 0 : gap,
-                continued: true,
-                ...linkOpts,
+                lineGap: gap,
               });
+            } else {
+              for (const run of runs) {
+                const s = { ...styles, ...(run.styles || {}) };
+                selectFontForInline(doc, s, !!run.bold, !!run.italic);
+                const linkOpts = getRunLinkTextOptions(run, {
+                  enableInternalAnchors: ctx?.options?.enableInternalAnchors,
+                });
+                doc.fillColor(styleColor(s, 'color', '#000')).text(run.text, {
+                  width: layout.contentWidth(),
+                  align,
+                  lineGap: singleLine ? 0 : gap,
+                  continued: true,
+                  ...linkOpts,
+                });
+              }
+              doc.text('', { continued: false });
             }
-            doc.text('', { continued: false });
           }
           layout.y = Math.max(layout.y, startYInline + h);
         }
       } else {
-        for (const child of node.children || []) {
-          await renderNode(child, childCtx);
+        const grouped = groupMixedChildren(node.children || [], styles);
+        for (const child of grouped) {
+          await renderNode(child, align !== 'left' ? { ...childCtx, inheritedAlign: align } : childCtx);
         }
       }
     }
@@ -1063,17 +1170,28 @@ async function renderNode(node, ctx) {
     return;
   }
 
+  if (tag === 'br') {
+    if (!measureOnly) {
+      const size = styleNumber(styles, 'font-size', BASE_PT);
+      const lh = lineHeightValue(styles, size, tag);
+      layout.cursorToNextLine(lh);
+    }
+    return;
+  }
+
   if (node.type === 'root' || tag === 'body') {
-    for (const child of node.children || []) {
-      await renderNode(child, ctx);
+    const groupedRoot = groupMixedChildren(node.children || [], styles);
+    for (const child of groupedRoot) {
+      await renderNode(child, alignCtx);
     }
     finishBlock();
     applyPageBreakAfter(styles, ctx, node);
     return;
   }
 
-  for (const child of node.children || []) {
-    await renderNode(child, ctx);
+  const groupedFallback = groupMixedChildren(node.children || [], styles);
+  for (const child of groupedFallback) {
+    await renderNode(child, alignCtx);
   }
   finishBlock();
   applyPageBreakAfter(styles, ctx, node);

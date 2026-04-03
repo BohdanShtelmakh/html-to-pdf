@@ -124,6 +124,42 @@ async function run() {
   `);
   assertBuffer(breakAvoid, 'break-inside avoid');
   assert.ok(pageCount(breakAvoid) >= 2, 'break-inside avoid should create at least 2 pages');
+
+  // Flex align-items: center
+  const alignCenter = await renderPdfFromHtml(`
+    <div style="display: flex; align-items: center;">
+      <div style="padding: 20px; background: #eee;">Tall</div>
+      <div>Short</div>
+    </div>
+  `);
+  assertBuffer(alignCenter, 'flex align-items center');
+
+  // Flex align-items: flex-start
+  const alignStart = await renderPdfFromHtml(`
+    <div style="display: flex; align-items: flex-start;">
+      <div style="padding: 20px;">Tall</div>
+      <div>Short</div>
+    </div>
+  `);
+  assertBuffer(alignStart, 'flex align-items flex-start');
+
+  // Flex align-items: flex-end
+  const alignEnd = await renderPdfFromHtml(`
+    <div style="display: flex; align-items: flex-end;">
+      <div style="padding: 20px;">Tall</div>
+      <div>Short</div>
+    </div>
+  `);
+  assertBuffer(alignEnd, 'flex align-items flex-end');
+
+  // Flex with br in children
+  const flexBr = await renderPdfFromHtml(`
+    <div style="display: flex; justify-content: space-between;">
+      <div>Name<br>Address<br>City</div>
+      <div style="text-align: right;">Invoice #1<br>Date: 2024-01-01</div>
+    </div>
+  `);
+  assertBuffer(flexBr, 'flex with br in children');
 }
 
 module.exports = { name: 'layout-edge', run };

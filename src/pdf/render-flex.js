@@ -32,6 +32,7 @@ function collectLineRuns(node, parentStyles, isInlineDisplay, mergeStylesFn) {
     if (n.type !== 'element') return;
 
     const tag = (n.tag || '').toLowerCase();
+    if (tag === 'br') { pushLine(); return; }
     const styles = { ...inherited.styles, ...mergeStylesFn(n) };
     const next = { ...inherited, styles };
     if (tag === 'b' || tag === 'strong') next.bold = true;
@@ -88,11 +89,12 @@ function parseFlexGrow(styles) {
   return 0;
 }
 
-async function renderFlexRow(children, ctx, { startX, startY, width, gap, rowGap, bottomMargin, justify, wrap }) {
+async function renderFlexRow(children, ctx, { startX, startY, width, gap, rowGap, bottomMargin, justify, wrap, alignItems }) {
   const { doc } = ctx;
   const measureOnly = !!ctx?.measureOnly;
   const debugInline = process.env.HTML_TO_PDF_DEBUG === '1';
   if (!children.length) return 0;
+  const containerRightMargin = doc.page.width - (startX + width);
   const baseGap = Number.isFinite(gap) ? gap : 0;
   const rowSpace = Number.isFinite(rowGap) ? rowGap : baseGap;
   const count = children.length;
@@ -137,7 +139,7 @@ async function renderFlexRow(children, ctx, { startX, startY, width, gap, rowGap
         x = startX;
         rowH = 0;
       }
-      const right = doc.page.width - (x + childWidth);
+      const right = Math.max(containerRightMargin, doc.page.width - (x + childWidth));
       const childLayout = new Layout(doc, {
         margins: { left: x, right, top: rowY, bottom: bottomMargin },
         measureOnly,
@@ -203,19 +205,55 @@ async function renderFlexRow(children, ctx, { startX, startY, width, gap, rowGap
     }
   }
 
+  const align = String(alignItems || 'stretch').toLowerCase();
+  const needsTwoPass = align === 'center' || align === 'flex-end' || align === 'end' || align === 'stretch';
+
+  // Pass 1: measure child heights
+  const childHeights = [];
   let maxHeight = 0;
   let x = startX + offset;
+  if (needsTwoPass && !measureOnly) {
+    for (let i = 0; i < count; i++) {
+      const child = children[i];
+      const childWidth = Math.max(0, widths[i] || 0);
+      const right = Math.max(containerRightMargin, doc.page.width - (x + childWidth));
+  
+      const measureLayout = new Layout(doc, {
+        margins: { left: x, right, top: startY, bottom: bottomMargin },
+        measureOnly: true,
+      });
+      measureLayout.atStartOfPage = false;
+      await renderNode(child, { doc, layout: measureLayout, options: ctx.options, measureOnly: true });
+      const h = measureLayout.y - startY;
+      childHeights.push(h);
+      maxHeight = Math.max(maxHeight, h);
+      x += childWidth + actualGap;
+    }
+  }
+
+  // Pass 2: render with alignment
+  x = startX + offset;
   for (let i = 0; i < count; i++) {
     const child = children[i];
     const childWidth = Math.max(0, widths[i] || 0);
-    const right = doc.page.width - (x + childWidth);
+    const childH = childHeights[i] || 0;
+    let childY = startY;
+    if (!measureOnly && needsTwoPass) {
+      if (align === 'center') childY = startY + (maxHeight - childH) / 2;
+      else if (align === 'flex-end' || align === 'end') childY = startY + maxHeight - childH;
+    }
+    const right = Math.max(containerRightMargin, doc.page.width - (x + childWidth));
+
     const childLayout = new Layout(doc, {
-      margins: { left: x, right, top: startY, bottom: bottomMargin },
+      margins: { left: x, right, top: childY, bottom: bottomMargin },
       measureOnly,
     });
     childLayout.atStartOfPage = false;
-    await renderNode(child, { doc, layout: childLayout, options: ctx.options, measureOnly });
-    maxHeight = Math.max(maxHeight, childLayout.y - startY);
+    const minH = (!measureOnly && align === 'stretch' && maxHeight > 0) ? maxHeight : undefined;
+    await renderNode(child, { doc, layout: childLayout, options: ctx.options, measureOnly, minHeight: minH });
+    if (!needsTwoPass || measureOnly) {
+      maxHeight = Math.max(maxHeight, childLayout.y - startY);
+    }
     x += childWidth + actualGap;
   }
   return maxHeight;
