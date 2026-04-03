@@ -50,16 +50,43 @@ function defaultMarginsFor(tag) {
   return { mt: d.mt, mb: d.mb };
 }
 
-function parseMarginShorthand(val, fallbackTop, fallbackBottom, base = BASE_PT) {
-  if (!val) return { top: fallbackTop, bottom: fallbackBottom };
-  const parts = String(val).trim().split(/\s+/).filter(Boolean);
-  if (!parts.length) return { top: fallbackTop, bottom: fallbackBottom };
-  const nums = parts.map((p) => parsePxWithOptions(p, null, { base })).filter((n) => n != null);
-  if (!nums.length) return { top: fallbackTop, bottom: fallbackBottom };
-  if (nums.length === 1) return { top: nums[0], bottom: nums[0] };
-  if (nums.length === 2) return { top: nums[0], bottom: nums[0] };
-  if (nums.length === 3) return { top: nums[0], bottom: nums[2] };
-  return { top: nums[0], bottom: nums[2] };
+/**
+ * Parse a CSS margin/padding shorthand value into all four sides.
+ * Also applies individual side overrides (e.g. margin-top) from styles if provided.
+ */
+function parseMarginBox(styles, fallback = 0, { base = BASE_PT } = {}) {
+  const out = { top: fallback, right: fallback, bottom: fallback, left: fallback };
+  if (!styles) return out;
+
+  const val = styles.margin || styles['margin'];
+  const parts = typeof val === 'string' ? val.trim().split(/\s+/).filter(Boolean) : [];
+  const toPx = (v) => parsePxWithOptions(v, fallback, { base });
+
+  if (parts.length === 1) {
+    const m = toPx(parts[0]);
+    out.top = out.right = out.bottom = out.left = m;
+  } else if (parts.length === 2) {
+    const v = toPx(parts[0]);
+    const h = toPx(parts[1]);
+    out.top = out.bottom = v;
+    out.left = out.right = h;
+  } else if (parts.length === 3) {
+    out.top = toPx(parts[0]);
+    out.left = out.right = toPx(parts[1]);
+    out.bottom = toPx(parts[2]);
+  } else if (parts.length >= 4) {
+    out.top = toPx(parts[0]);
+    out.right = toPx(parts[1]);
+    out.bottom = toPx(parts[2]);
+    out.left = toPx(parts[3]);
+  }
+
+  if (styles['margin-top'] != null) out.top = toPx(styles['margin-top']);
+  if (styles['margin-bottom'] != null) out.bottom = toPx(styles['margin-bottom']);
+  if (styles['margin-left'] != null) out.left = toPx(styles['margin-left']);
+  if (styles['margin-right'] != null) out.right = toPx(styles['margin-right']);
+
+  return out;
 }
 
 function defaultLineHeightFor(tag) {
@@ -72,15 +99,16 @@ function computedMargins(styles, tag) {
   const d = defaultMarginsFor(tag);
   const defaultTop = d.mt * scale;
   const defaultBottom = d.mb * scale;
-  const marginFromShorthand = parseMarginShorthand(styles.margin, defaultTop, defaultBottom, fontSize);
+  const box = parseMarginBox(styles, 0, { base: fontSize });
+  const hasShorthand = styles.margin != null;
   const mt =
     styles['margin-top'] != null
       ? parsePxWithOptions(styles['margin-top'], defaultTop, { base: fontSize })
-      : marginFromShorthand.top;
+      : hasShorthand ? box.top : defaultTop;
   const mb =
     styles['margin-bottom'] != null
       ? parsePxWithOptions(styles['margin-bottom'], defaultBottom, { base: fontSize })
-      : marginFromShorthand.bottom;
+      : hasShorthand ? box.bottom : defaultBottom;
   return { mt, mb };
 }
 
@@ -267,5 +295,5 @@ module.exports = {
   lineGapFor,
   lineHeightValue,
   textDecorations,
-  parseMarginShorthand,
+  parseMarginBox,
 };
