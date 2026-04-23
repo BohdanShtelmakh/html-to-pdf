@@ -863,14 +863,38 @@ async function renderNode(node, ctx) {
       styles['border-left-style'] || borderStyle
     );
     const radius = styleNumber(styles, 'border-radius', 0);
+    const boxSizing = String(styles['box-sizing'] || 'content-box').trim().toLowerCase();
+    const explicitHeight = styleNumber(styles, 'height', null, { percentBase: doc.page.height });
+    const cssMinHeight = styleNumber(styles, 'min-height', null, { percentBase: doc.page.height });
+    const toOuterHeight = (value) => {
+      if (value == null || !Number.isFinite(value)) return null;
+      if (boxSizing === 'border-box') return value;
+      return value + borderTop.width + paddingTop + paddingBottom + borderBottom.width;
+    };
+    const explicitOuterHeight = toOuterHeight(explicitHeight);
+    const cssMinOuterHeight = toOuterHeight(cssMinHeight);
+    const minimumOuterHeight = Math.max(
+      explicitOuterHeight ?? 0,
+      cssMinOuterHeight ?? 0,
+      minHeight ?? 0
+    );
 
-    layout.ensureSpace(paddingTop + paddingBottom + borderTop.width + borderBottom.width);
+    layout.ensureSpace(Math.max(paddingTop + paddingBottom + borderTop.width + borderBottom.width, minimumOuterHeight));
     const startY = layout.y;
     const blockX = layout.x;
     const blockWidth = layout.contentWidth();
     const contentX = blockX + borderLeft.width + paddingLeft;
     const contentWidth = Math.max(0, blockWidth - borderLeft.width - borderRight.width - paddingLeft - paddingRight);
     const contentStartY = startY + borderTop.width + paddingTop;
+    const display = String(styles.display || '').toLowerCase();
+    const isFlex = display === 'flex';
+    const isGrid = display === 'grid';
+    const flexDirection = String(styles['flex-direction'] || 'row').toLowerCase();
+    const justifyContent = String(styles['justify-content'] || 'flex-start').toLowerCase();
+    const gap = styleNumber(styles, 'gap', 0);
+    const colGap = styleNumber(styles, 'column-gap', gap);
+    const rowGap = styleNumber(styles, 'row-gap', gap);
+    const alignItems = String(styles['align-items'] || 'stretch').toLowerCase();
     if (process.env.HTML_TO_PDF_DEBUG === '1' && tag === 'figure') {
       console.log('[figure-box]', {
         paddingTop,
@@ -912,6 +936,60 @@ async function renderNode(node, ctx) {
               characterSpacing: letterSpacing,
               wordSpacing,
             });
+      } else if (isFlex || isGrid) {
+        const measureChildren = elementChildren(node);
+        if (isFlex) {
+          if (flexDirection === 'column') {
+            const measureLayout = new Layout(doc, {
+              margins: {
+                left: contentX,
+                right: doc.page.width - (contentX + contentWidth),
+                top: contentStartY,
+                bottom: layout.marginBottom,
+              },
+              measureOnly: true,
+            });
+            measureLayout.atStartOfPage = false;
+            let first = true;
+            for (const child of measureChildren) {
+              if (!first) measureLayout.cursorToNextLine(rowGap);
+              await renderNode(child, { doc, layout: measureLayout, options: ctx.options, measureOnly: true });
+              first = false;
+            }
+            measuredContent = Math.max(0, measureLayout.y - contentStartY);
+          } else {
+            measuredContent = await renderFlexRow(
+              measureChildren,
+              { ...childCtx, doc, measureOnly: true, _isInlineDisplay: isInlineDisplay },
+              {
+                startX: contentX,
+                startY: contentStartY,
+                width: contentWidth,
+                gap: colGap,
+                rowGap,
+                bottomMargin: layout.marginBottom,
+                justify: justifyContent,
+                wrap: String(styles['flex-wrap'] || 'nowrap').toLowerCase(),
+                alignItems,
+              }
+            );
+          }
+        } else {
+          const columns =
+            parseGridTemplateColumns(styles['grid-template-columns'], contentWidth, colGap) ||
+            parseGridColumnCount(styles['grid-template-columns']) ||
+            1;
+          measuredContent = await renderGrid(measureChildren, { ...childCtx, doc, measureOnly: true }, {
+            startX: contentX,
+            startY: contentStartY,
+            width: contentWidth,
+            columns,
+            colGap,
+            rowGap,
+            bottomMargin: layout.marginBottom,
+            alignItems,
+          });
+        }
       } else {
         const measureLayout = new Layout(doc, {
           margins: {
@@ -942,7 +1020,7 @@ async function renderNode(node, ctx) {
       }
 
       const boxH = borderTop.width + paddingTop + measuredContent + paddingBottom + borderBottom.width;
-      const desiredBoxH = minHeight != null ? Math.max(boxH, minHeight) : boxH;
+      const desiredBoxH = Math.max(boxH, minimumOuterHeight);
       if (desiredBoxH > 0) {
         drawBox(doc, blockX, startY, blockWidth, desiredBoxH, {
           bg,
@@ -964,20 +1042,10 @@ async function renderNode(node, ctx) {
     layout.x = contentX;
     layout.contentWidth = () => contentWidth;
 
-    const display = String(styles.display || '').toLowerCase();
-    const isFlex = display === 'flex';
-    const isGrid = display === 'grid';
-    const flexDirection = String(styles['flex-direction'] || 'row').toLowerCase();
-    const justifyContent = String(styles['justify-content'] || 'flex-start').toLowerCase();
-
     if (isFlex || isGrid) {
       const children = elementChildren(node);
-      const gap = styleNumber(styles, 'gap', 0);
-      const colGap = styleNumber(styles, 'column-gap', gap);
-      const rowGap = styleNumber(styles, 'row-gap', gap);
       const contentWidth = layout.contentWidth();
       const contentX = layout.x;
-      const alignItems = String(styles['align-items'] || 'stretch').toLowerCase();
       let usedHeight = 0;
 
       if (isFlex) {
@@ -1127,11 +1195,10 @@ async function renderNode(node, ctx) {
       layout.pendingBottomMargin = 0;
     }
 
-    if (minHeight != null) {
-      const currentBoxH = layout.y - startY + paddingBottom + borderBottom.width;
-      if (currentBoxH < minHeight) {
-        layout.y += minHeight - currentBoxH;
-      }
+    const currentBoxH = layout.y - startY + paddingBottom + borderBottom.width;
+    const desiredBoxH = Math.max(currentBoxH, minimumOuterHeight);
+    if (currentBoxH < desiredBoxH) {
+      layout.y += desiredBoxH - currentBoxH;
     }
     const endY = layout.y;
     if (process.env.HTML_TO_PDF_DEBUG === '1' && node.attrs?.class) {
@@ -1145,7 +1212,7 @@ async function renderNode(node, ctx) {
         minHeight,
       });
     }
-    const boxH = endY - startY + paddingBottom + borderBottom.width;
+    const boxH = Math.max(endY - startY + paddingBottom + borderBottom.width, desiredBoxH);
 
     if (
       !measureOnly &&

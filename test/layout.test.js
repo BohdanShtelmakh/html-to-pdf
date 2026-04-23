@@ -39,6 +39,28 @@ async function run() {
   `);
   assertBuffer(flexWrap, 'flex wrap');
 
+  // Explicit div heights are respected in flex containers
+  const explicitDivHeights = await renderPdfFromHtml(`
+    <div style="border:1px solid #000;display:flex;height:400px;margin-bottom:10px">
+      <p>test 1</p>
+    </div>
+    <div style="border:1px solid #000;display:flex;height:200px;">
+      <p>test 2</p>
+    </div>
+  `);
+  assertBuffer(explicitDivHeights, 'explicit div heights');
+
+  // Framed flex containers use flex measurement for background/border height
+  const framedFlexRow = await renderPdfFromHtml(`
+    <div style="display:flex;background:#f3e8ff;border:1px solid #6b21a8;padding:12px 20px;margin-bottom:20px">
+      <div><b>STUDENT NAME</b><span>Benjamin J. Thompson</span></div>
+      <div><b>ADMISSION NO</b><span>ADM-2022-450</span></div>
+      <div><b>GRADE / CLASS</b><span>Grade 8 - Alpha</span></div>
+    </div>
+    <h3>Particulars</h3>
+  `);
+  assertBuffer(framedFlexRow, 'framed flex row');
+
   // Grid layout
   const grid = await renderPdfFromHtml(`
     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
