@@ -125,6 +125,41 @@ async function renderFlexRow(children, ctx, { startX, startY, width, gap, rowGap
   // Lazy require to break circular dependency (renderFlexRow → renderNode)
   const { renderNode } = require('./render-node');
 
+  const measureChild = async (child, x, childWidth, top) => {
+    const right = Math.max(containerRightMargin, doc.page.width - (x + childWidth));
+    const measureLayout = new Layout(doc, {
+      margins: { left: x, right, top, bottom: bottomMargin },
+      measureOnly: true,
+    });
+    measureLayout.atStartOfPage = false;
+    await renderNode(child, { doc, layout: measureLayout, options: ctx.options, measureOnly: true });
+    return Math.max(0, measureLayout.y - top);
+  };
+
+  const measureStacked = async () => {
+    let total = 0;
+    for (let i = 0; i < count; i++) {
+      const h = await measureChild(children[i], startX, width, 0);
+      total += h + (i < count - 1 ? rowSpace : 0);
+    }
+    return total;
+  };
+
+  const renderStacked = async () => {
+    let y = startY;
+    for (let i = 0; i < count; i++) {
+      const childLayout = new Layout(doc, {
+        margins: { left: startX, right: doc.page.width - (startX + width), top: y, bottom: bottomMargin },
+        measureOnly,
+      });
+      childLayout.atStartOfPage = false;
+      await renderNode(children[i], { doc, layout: childLayout, options: ctx.options, measureOnly });
+      y = childLayout.y;
+      if (i < count - 1) y += rowSpace;
+    }
+    return { absoluteY: y };
+  };
+
   if (wrap && String(wrap).toLowerCase() !== 'nowrap') {
     let maxY = startY;
     let rowY = startY;
@@ -212,23 +247,22 @@ async function renderFlexRow(children, ctx, { startX, startY, width, gap, rowGap
   const childHeights = [];
   let maxHeight = 0;
   let x = startX + offset;
-  if (needsTwoPass && !measureOnly) {
+  if (needsTwoPass || measureOnly) {
     for (let i = 0; i < count; i++) {
       const child = children[i];
       const childWidth = Math.max(0, widths[i] || 0);
-      const right = Math.max(containerRightMargin, doc.page.width - (x + childWidth));
-  
-      const measureLayout = new Layout(doc, {
-        margins: { left: x, right, top: startY, bottom: bottomMargin },
-        measureOnly: true,
-      });
-      measureLayout.atStartOfPage = false;
-      await renderNode(child, { doc, layout: measureLayout, options: ctx.options, measureOnly: true });
-      const h = measureLayout.y - startY;
+      const h = await measureChild(child, x, childWidth, startY);
       childHeights.push(h);
       maxHeight = Math.max(maxHeight, h);
       x += childWidth + actualGap;
     }
+  }
+
+  const availablePageHeight = doc.page.height - bottomMargin - startY;
+  const shouldStack = count > 1 && maxHeight > availablePageHeight;
+  if (shouldStack) {
+    if (measureOnly) return measureStacked();
+    return renderStacked();
   }
 
   // Pass 2: render with alignment

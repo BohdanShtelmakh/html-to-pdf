@@ -1,6 +1,7 @@
 const { styleNumber, styleColor, textAlign, lineHeightValue } = require('../pdf/style');
 const { inlineRuns, selectFontForInline, gatherPlainText } = require('../pdf/text');
 const { getRunLinkTextOptions } = require('../pdf/link');
+const { Layout } = require('../pdf/layout');
 
 function normalizePaint(val) {
   if (!val) return null;
@@ -63,6 +64,124 @@ function resolveBorder(cellStyles, rowStyles, tableStyles) {
   return { borderWidth, borderColor, borderBottomWidth, borderBottomColor, borderBottomStyle };
 }
 
+const BLOCK_CELL_TAGS = new Set([
+  'div',
+  'p',
+  'section',
+  'article',
+  'header',
+  'footer',
+  'table',
+  'ul',
+  'ol',
+  'blockquote',
+  'pre',
+  'figure',
+  'svg',
+  'img',
+]);
+
+function cellChildren(cell) {
+  return (cell.children || []).filter((child) => {
+    if (child.type === 'text') return /\S/.test(child.text || '');
+    return child.type === 'element';
+  });
+}
+
+function hasBlockCellContent(cell) {
+  return cellChildren(cell).some((child) => {
+    if (child.type !== 'element') return false;
+    const tag = (child.tag || '').toLowerCase();
+    return BLOCK_CELL_TAGS.has(tag);
+  });
+}
+
+function textTokens(text) {
+  return String(text || '')
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter(Boolean);
+}
+
+function measureTokenWidth(doc, text, styles, bold, fontSize) {
+  selectFontForInline(doc, styles || {}, bold, false, fontSize);
+  let max = 0;
+  for (const token of textTokens(text)) {
+    max = Math.max(max, doc.widthOfString(token));
+  }
+  return max;
+}
+
+function distributeColumnWidths(preferred, minimum, totalWidth) {
+  const cols = preferred.length;
+  if (!cols) return [];
+  const prefSum = preferred.reduce((sum, w) => sum + w, 0);
+  const minSum = minimum.reduce((sum, w) => sum + w, 0);
+
+  if (prefSum <= 0) return Array.from({ length: cols }, () => totalWidth / cols);
+
+  if (prefSum <= totalWidth) {
+    const extra = totalWidth - prefSum;
+    return preferred.map((w) => w + extra / cols);
+  }
+
+  if (minSum < totalWidth) {
+    const shrinkable = preferred.map((w, i) => Math.max(0, w - minimum[i]));
+    const shrinkTotal = shrinkable.reduce((sum, w) => sum + w, 0);
+    const needShrink = prefSum - totalWidth;
+    if (shrinkTotal > 0) {
+      return preferred.map((w, i) => Math.max(minimum[i], w - needShrink * (shrinkable[i] / shrinkTotal)));
+    }
+  }
+
+  if (minSum > 0) {
+    const scale = totalWidth / minSum;
+    return minimum.map((w) => w * scale);
+  }
+
+  return preferred.map((w) => w * (totalWidth / prefSum));
+}
+
+async function measureBlockCell(cell, ctx, x, width, top, bottomMargin) {
+  const { doc } = ctx;
+  const children = cellChildren(cell);
+  if (!children.length) return 0;
+  const { renderNode } = require('../pdf/render-node');
+  const measureLayout = new Layout(doc, {
+    margins: {
+      left: x,
+      right: doc.page.width - (x + width),
+      top,
+      bottom: bottomMargin,
+    },
+    measureOnly: true,
+  });
+  measureLayout.atStartOfPage = false;
+  for (const child of children) {
+    await renderNode(child, { doc, layout: measureLayout, options: ctx.options, measureOnly: true });
+  }
+  return Math.max(0, measureLayout.y - top);
+}
+
+async function renderBlockCell(cell, ctx, x, y, width, bottomMargin) {
+  const { doc } = ctx;
+  const children = cellChildren(cell);
+  if (!children.length) return;
+  const { renderNode } = require('../pdf/render-node');
+  const cellLayout = new Layout(doc, {
+    margins: {
+      left: x,
+      right: doc.page.width - (x + width),
+      top: y,
+      bottom: bottomMargin,
+    },
+  });
+  cellLayout.atStartOfPage = false;
+  for (const child of children) {
+    await renderNode(child, { doc, layout: cellLayout, options: ctx.options });
+  }
+}
+
 async function renderTable(node, ctx, tableStyles = {}) {
   const { doc, layout } = ctx;
   const measureOnly = !!ctx?.measureOnly;
@@ -89,7 +208,8 @@ async function renderTable(node, ctx, tableStyles = {}) {
   const cellPadding = styleNumber(tableStyles, 'padding', 6);
   const contentWidth = layout.contentWidth();
 
-  const colWidths = Array(cols).fill(0);
+  const preferredWidths = Array(cols).fill(0);
+  const minWidths = Array(cols).fill(0);
 
   for (const row of rows) {
     let colIndex = 0;
@@ -106,24 +226,24 @@ async function renderTable(node, ctx, tableStyles = {}) {
       const explicitWidth = styleNumber(cell.styles || {}, 'width', null, { percentBase: contentWidth });
       const availableWidth = Math.max(10, (contentWidth / cols) * colspan - padL - padR);
       selectFontForInline(doc, cell.styles || {}, isHeader, false, fs);
-      const measured = doc.widthOfString(text, { width: availableWidth });
+      const measured = hasBlockCellContent(cell)
+        ? availableWidth
+        : Math.min(doc.widthOfString(text), contentWidth);
+      const tokenWidth = measureTokenWidth(doc, text, cell.styles || {}, isHeader, fs);
       const needed = measured + padL + padR;
+      const minNeeded = Math.min(tokenWidth + padL + padR, contentWidth);
       const target = explicitWidth != null ? explicitWidth : needed;
       const perCol = target / colspan;
+      const minPerCol = minNeeded / colspan;
       for (let i = 0; i < colspan && colIndex + i < cols; i++) {
-        colWidths[colIndex + i] = Math.max(colWidths[colIndex + i], perCol);
+        preferredWidths[colIndex + i] = Math.max(preferredWidths[colIndex + i], perCol);
+        minWidths[colIndex + i] = Math.max(minWidths[colIndex + i], minPerCol);
       }
       colIndex += colspan;
     }
   }
 
-  const totalPreferred = colWidths.reduce((a, b) => a + b, 0);
-  if (totalPreferred <= 0) {
-    for (let i = 0; i < cols; i++) colWidths[i] = contentWidth / cols;
-  } else {
-    const scale = contentWidth / totalPreferred;
-    for (let i = 0; i < cols; i++) colWidths[i] *= scale;
-  }
+  const colWidths = distributeColumnWidths(preferredWidths, minWidths, contentWidth);
 
   for (const row of rows) {
     let rowHeight = 0;
@@ -144,7 +264,10 @@ async function renderTable(node, ctx, tableStyles = {}) {
       const padL = styleNumber(cell.styles || {}, 'padding-left', cellPadding);
       const padR = styleNumber(cell.styles || {}, 'padding-right', cellPadding);
       selectFontForInline(doc, cell.styles || {}, isHeader, false, fs);
-      const h = doc.heightOfString(text, { width: spanWidth - padL - padR, lineGap });
+      const innerWidth = Math.max(1, spanWidth - padL - padR);
+      const h = hasBlockCellContent(cell)
+        ? await measureBlockCell(cell, ctx, 0, innerWidth, 0, layout.marginBottom)
+        : doc.heightOfString(text, { width: innerWidth, lineGap });
       rowHeight = Math.max(rowHeight, h + padT + padB);
       measureCol += colspan;
     }
@@ -201,22 +324,27 @@ async function renderTable(node, ctx, tableStyles = {}) {
       const padR = styleNumber(cell.styles || {}, 'padding-right', cellPadding);
 
       if (!measureOnly) {
-        doc.x = x + padL;
-        doc.y = y + padT;
-        for (const run of runs) {
-          selectFontForInline(doc, run.styles || {}, isHeader || !!run.bold, !!run.italic);
-          const linkOpts = getRunLinkTextOptions(run, {
-            enableInternalAnchors: ctx?.options?.enableInternalAnchors,
-          });
-          doc.fillColor(styleColor(run.styles || {}, 'color', '#000')).text(run.text, {
-            width: spanWidth - padL - padR,
-            align,
-            lineGap,
-            continued: true,
-            ...linkOpts,
-          });
+        const innerWidth = Math.max(1, spanWidth - padL - padR);
+        if (hasBlockCellContent(cell)) {
+          await renderBlockCell(cell, ctx, x + padL, y + padT, innerWidth, layout.marginBottom);
+        } else {
+          doc.x = x + padL;
+          doc.y = y + padT;
+          for (const run of runs) {
+            selectFontForInline(doc, run.styles || {}, isHeader || !!run.bold, !!run.italic);
+            const linkOpts = getRunLinkTextOptions(run, {
+              enableInternalAnchors: ctx?.options?.enableInternalAnchors,
+            });
+            doc.fillColor(styleColor(run.styles || {}, 'color', '#000')).text(run.text, {
+              width: innerWidth,
+              align,
+              lineGap,
+              continued: true,
+              ...linkOpts,
+            });
+          }
+          doc.text('', { continued: false });
         }
-        doc.text('', { continued: false });
       }
       drawCol += colspan;
     }

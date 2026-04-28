@@ -50,6 +50,42 @@ async function run() {
     </table>
   `);
   assertBuffer(withFoot, 'table with tfoot');
+
+  // Constrained multi-column tables keep readable column widths
+  const constrained = await renderPdfFromHtml(`
+    <div style="width: 260px;">
+      <table>
+        <thead>
+          <tr><th>Risk</th><th>Impact</th><th>Probability</th><th>Mitigation</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Operational Risk</td>
+            <td>Medium</td>
+            <td>45%</td>
+            <td>Monitor weekly and document fallback plan.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  `);
+  assertBuffer(constrained, 'constrained table');
+
+  // Nested tables render as block content inside cells instead of flattened text
+  const nested = await renderPdfFromHtml(`
+    <table>
+      <tr>
+        <td>
+          North America
+          <table>
+            <tr><td>ARR</td><td>$1.1M</td></tr>
+            <tr><td>NPS</td><td>71</td></tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  `);
+  assertBuffer(nested, 'nested table in cell');
 }
 
 module.exports = { name: 'tables', run };

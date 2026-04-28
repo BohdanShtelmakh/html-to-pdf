@@ -911,6 +911,7 @@ async function renderNode(node, ctx) {
     const hasFrame = bg || borderTop.width || borderRight.width || borderBottom.width || borderLeft.width;
     const prepaint = !measureOnly && hasFrame;
     const inlineOnly = isInlineOnly(node);
+    let skippedPagedFrame = false;
 
     if (prepaint && (node.children || []).length) {
       const debug = process.env.HTML_TO_PDF_DEBUG === '1';
@@ -1021,7 +1022,9 @@ async function renderNode(node, ctx) {
 
       const boxH = borderTop.width + paddingTop + measuredContent + paddingBottom + borderBottom.width;
       const desiredBoxH = Math.max(boxH, minimumOuterHeight);
-      if (desiredBoxH > 0) {
+      const availableOnPage = doc.page.height - layout.marginBottom - startY;
+      skippedPagedFrame = desiredBoxH > availableOnPage;
+      if (desiredBoxH > 0 && !skippedPagedFrame) {
         drawBox(doc, blockX, startY, blockWidth, desiredBoxH, {
           bg,
           borderTop,
@@ -1047,6 +1050,7 @@ async function renderNode(node, ctx) {
       const contentWidth = layout.contentWidth();
       const contentX = layout.x;
       let usedHeight = 0;
+      let usedAbsoluteY = null;
 
       if (isFlex) {
         const flexWrap = String(styles['flex-wrap'] || 'nowrap').toLowerCase();
@@ -1059,7 +1063,7 @@ async function renderNode(node, ctx) {
           }
           usedHeight = layout.y - contentStartY;
         } else {
-          usedHeight = await renderFlexRow(children, { ...childCtx, _isInlineDisplay: isInlineDisplay }, {
+          const flexResult = await renderFlexRow(children, { ...childCtx, _isInlineDisplay: isInlineDisplay }, {
             startX: contentX,
             startY: contentStartY,
             width: contentWidth,
@@ -1070,6 +1074,11 @@ async function renderNode(node, ctx) {
             wrap: flexWrap,
             alignItems,
           });
+          if (flexResult && typeof flexResult === 'object') {
+            usedAbsoluteY = flexResult.absoluteY;
+          } else {
+            usedHeight = flexResult;
+          }
         }
       } else {
         const columns =
@@ -1088,7 +1097,11 @@ async function renderNode(node, ctx) {
         });
       }
 
-      layout.y = Math.max(layout.y, contentStartY + usedHeight);
+      if (usedAbsoluteY != null) {
+        layout.y = Math.max(0, usedAbsoluteY);
+      } else {
+        layout.y = Math.max(layout.y, contentStartY + usedHeight);
+      }
     } else {
       if (inlineOnly) {
         const size = styleNumber(styles, 'font-size', BASE_PT);
@@ -1195,16 +1208,17 @@ async function renderNode(node, ctx) {
       layout.pendingBottomMargin = 0;
     }
 
-    const currentBoxH = layout.y - startY + paddingBottom + borderBottom.width;
+    const currentBoxH = Math.max(0, layout.y - startY + paddingBottom + borderBottom.width);
     const desiredBoxH = Math.max(currentBoxH, minimumOuterHeight);
     if (currentBoxH < desiredBoxH) {
       layout.y += desiredBoxH - currentBoxH;
     }
     const endY = layout.y;
+    const renderedContentHeight = Math.max(0, endY - contentStartY);
     if (process.env.HTML_TO_PDF_DEBUG === '1' && node.attrs?.class) {
       console.log('[div-render]', {
         className: node.attrs?.class || '',
-        contentHeight: endY - contentStartY,
+        contentHeight: renderedContentHeight,
         paddingTop,
         paddingBottom,
         borderTop: borderTop.width,
@@ -1217,6 +1231,7 @@ async function renderNode(node, ctx) {
     if (
       !measureOnly &&
       !prepaint &&
+      !skippedPagedFrame &&
       (bg || borderTop.width || borderRight.width || borderBottom.width || borderLeft.width) &&
       boxH > 0
     ) {

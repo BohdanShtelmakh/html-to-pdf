@@ -61,6 +61,19 @@ async function run() {
   `);
   assertBuffer(framedFlexRow, 'framed flex row');
 
+  // Tall flex rows fall back to a paginated stacked flow
+  const tallFlexRow = await renderPdfFromHtml(`
+    <div style="display:flex;gap:20px;">
+      <div style="width:58%;">
+        ${Array.from({ length: 45 }).map((_, i) => `<p>Left column paragraph ${i + 1}</p>`).join('')}
+      </div>
+      <div style="width:42%;">
+        <p>Right column content should not render with a stale page cursor.</p>
+      </div>
+    </div>
+  `);
+  assertBuffer(tallFlexRow, 'tall flex row');
+
   // Grid layout
   const grid = await renderPdfFromHtml(`
     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
