@@ -1,6 +1,6 @@
 {
   "name": "html-pdf-lite",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "Generate a PDF from HTML using a lightweight HTML/CSS parser and PDFKit.",
   "main": "src/index.js",
   "exports": {
