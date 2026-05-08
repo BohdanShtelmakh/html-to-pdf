@@ -1,5 +1,5 @@
 const { BASE_PT, mergeStyles, styleNumber, lineHeightValue, textDecorations, styleColor } = require('./style');
-const { normalizeName } = require('../fonts');
+const { normalizeName, fontSupportsText, findFallbackFontForText } = require('../fonts');
 
 const fontDebugCache = new Set();
 
@@ -30,7 +30,7 @@ function isBoldWeight(value) {
   return Number.isFinite(numeric) && numeric >= 600;
 }
 
-function selectFontForInline(doc, styles, strong = false, italic = false, sizeOverride = null) {
+function selectFontForInline(doc, styles, strong = false, italic = false, sizeOverride = null, text = '') {
   const requested = sizeOverride != null ? sizeOverride : styleNumber(styles, 'font-size', BASE_PT);
   const size = requested || BASE_PT;
 
@@ -42,13 +42,16 @@ function selectFontForInline(doc, styles, strong = false, italic = false, sizeOv
     for (const family of families) {
       const matched = pickFamilyFont(family, doc._fontFamilyMap, isBold, isItalic);
       if (matched) {
+        const fallback = fontSupportsText(matched, text)
+          ? null
+          : findFallbackFontForText(text, { bold: isBold, italic: isItalic });
         try {
-          doc.font(matched).fontSize(size);
+          doc.font(fallback || matched).fontSize(size);
           if (process.env.HTML_TO_PDF_DEBUG_FONTS === '1') {
-            const key = `${family}|${isBold ? 'b' : 'n'}${isItalic ? 'i' : 'n'}|${matched}`;
+            const key = `${family}|${isBold ? 'b' : 'n'}${isItalic ? 'i' : 'n'}|${fallback || matched}`;
             if (!fontDebugCache.has(key)) {
               fontDebugCache.add(key);
-              console.log('[font-pick]', { family, bold: isBold, italic: isItalic, path: matched });
+              console.log('[font-pick]', { family, bold: isBold, italic: isItalic, path: fallback || matched });
             }
           }
           return;

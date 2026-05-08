@@ -10,11 +10,25 @@ function measureLineWidth(line, doc) {
     const size = styleNumber(run.styles || {}, 'font-size', BASE_PT);
     const letterSpacing = styleNumber(run.styles || {}, 'letter-spacing', 0, { baseSize: size });
     const wordSpacing = styleNumber(run.styles || {}, 'word-spacing', 0, { baseSize: size });
-    selectFontForInline(doc, run.styles || {}, !!run.bold, !!run.italic, size);
+    selectFontForInline(doc, run.styles || {}, !!run.bold, !!run.italic, size, run.text);
     const spaces = (text.match(/ /g) || []).length;
     width += doc.widthOfString(text, { characterSpacing: letterSpacing }) + wordSpacing * spaces;
   }
   return width;
+}
+
+function minLineWidth(line, doc) {
+  let max = 0;
+  for (const run of line) {
+    const text = run.text || '';
+    if (!text) continue;
+    const size = styleNumber(run.styles || {}, 'font-size', BASE_PT);
+    selectFontForInline(doc, run.styles || {}, !!run.bold, !!run.italic, size, run.text);
+    for (const token of String(text).split(/\s+/).filter(Boolean)) {
+      max = Math.max(max, doc.widthOfString(token));
+    }
+  }
+  return max;
 }
 
 function collectLineRuns(node, parentStyles, isInlineDisplay, mergeStylesFn) {
@@ -74,6 +88,59 @@ function estimateNodeWidth(node, doc, isInlineDisplay) {
   return maxWidth + padL + padR + borderL + borderR + widthEps;
 }
 
+function estimateNodeMinWidth(node, doc, isInlineDisplay) {
+  if (!node) return 0;
+  if (node.type === 'text') {
+    selectFontForInline(doc, {}, false, false, BASE_PT, node.text || '');
+    return Math.max(...String(node.text || '').split(/\s+/).filter(Boolean).map((token) => doc.widthOfString(token)), 0);
+  }
+  if (node.type !== 'element') return 0;
+  const styles = mergeStyles(node);
+  const padding = styleNumber(styles, 'padding', 0);
+  const padL = styleNumber(styles, 'padding-left', padding);
+  const padR = styleNumber(styles, 'padding-right', padding);
+  const borderWidth = styleNumber(styles, 'border-width', 0);
+  const borderL = styleNumber(styles, 'border-left-width', borderWidth);
+  const borderR = styleNumber(styles, 'border-right-width', borderWidth);
+  const explicitWidth = styleNumber(styles, 'width', null);
+  const minWidth = styleNumber(styles, 'min-width', null);
+  if (explicitWidth != null) return Math.max(0, explicitWidth);
+  const lines = collectLineRuns(node, styles, isInlineDisplay, mergeStyles);
+  let maxWidth = 0;
+  for (const line of lines) {
+    maxWidth = Math.max(maxWidth, minLineWidth(line, doc));
+  }
+  return Math.max(0, minWidth ?? 0, maxWidth + padL + padR + borderL + borderR + 1);
+}
+
+function shrinkWidths(widths, minWidths, available) {
+  const out = widths.slice();
+  let total = out.reduce((sum, w) => sum + w, 0);
+  let over = total - available;
+  if (over <= 0) return out;
+
+  const flexible = new Set(out.map((_, i) => i));
+  while (over > 0.01 && flexible.size) {
+    const shrinkable = Array.from(flexible).reduce((sum, i) => sum + Math.max(0, out[i] - minWidths[i]), 0);
+    if (shrinkable <= 0) break;
+    for (const i of Array.from(flexible)) {
+      const room = Math.max(0, out[i] - minWidths[i]);
+      const shrink = Math.min(room, over * (room / shrinkable));
+      out[i] -= shrink;
+      if (out[i] <= minWidths[i] + 0.01) flexible.delete(i);
+    }
+    total = out.reduce((sum, w) => sum + w, 0);
+    over = total - available;
+  }
+
+  if (over > 0.01 && total > 0) {
+    const scale = available / total;
+    return out.map((w) => w * scale);
+  }
+  return out;
+}
+
+
 function parseFlexGrow(styles) {
   const grow = styles ? styles['flex-grow'] : null;
   if (grow != null) {
@@ -106,18 +173,26 @@ async function renderFlexRow(children, ctx, { startX, startY, width, gap, rowGap
     const explicitWidth = styleNumber(childStyles, 'width', null, { percentBase: width });
     const baseWidth = basis ?? explicitWidth ?? estimateNodeWidth(child, doc, isInlineDisplay);
     const grow = parseFlexGrow(childStyles);
-    return { child, baseWidth: Math.max(0, baseWidth || 0), grow, hasExplicit: basis != null || explicitWidth != null };
+    const minWidth = estimateNodeMinWidth(child, doc, isInlineDisplay);
+    return {
+      child,
+      baseWidth: Math.max(0, baseWidth || 0),
+      minWidth: Math.max(0, Math.min(minWidth, width)),
+      grow,
+      hasExplicit: basis != null || explicitWidth != null,
+    };
   });
 
   let totalBase = items.reduce((sum, item) => sum + item.baseWidth, 0);
   const totalGrow = items.reduce((sum, item) => sum + (item.grow || 0), 0);
   let widths = items.map((item) => item.baseWidth);
+  let minWidths = items.map((item) => item.minWidth);
 
   const justifyValue = String(justify || 'flex-start').toLowerCase();
   const canEven = ['space-between', 'space-around', 'space-evenly'].includes(justifyValue);
   const equalWidth = count ? available / count : 0;
   const allAuto = items.every((item) => !item.hasExplicit && (!item.grow || item.grow === 0));
-  if (canEven && allAuto && equalWidth > 0 && items.every((item) => item.baseWidth <= equalWidth)) {
+  if (canEven && justifyValue !== 'space-between' && allAuto && equalWidth > 0 && items.every((item) => item.baseWidth <= equalWidth)) {
     widths = items.map(() => equalWidth);
     totalBase = available;
   }
@@ -205,8 +280,7 @@ async function renderFlexRow(children, ctx, { startX, startY, width, gap, rowGap
     widths = items.map((item) => item.baseWidth + extra * (item.grow / totalGrow));
     totalBase = available;
   } else if (totalBase > available && totalBase > 0) {
-    const scale = available / totalBase;
-    widths = widths.map((w) => w * scale);
+    widths = shrinkWidths(widths, minWidths, available);
     totalBase = available;
   }
 

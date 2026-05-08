@@ -263,9 +263,9 @@ function renderInlineRuns(runs, ctx, { baseStyles, align, lineGap, tag }) {
     const radius = inlineBox ? styleNumber(s, 'border-radius', 0) : 0;
     const bg = inlineBox ? styleColor(s, 'background-color', null) : null;
 
-    selectFontForInline(doc, s, !!run.bold, !!run.italic, size);
     const spaces = (run.text || '').match(/ /g) || [];
     const text = run.text || '';
+    selectFontForInline(doc, s, !!run.bold, !!run.italic, size, text);
     const textWidth = doc.widthOfString(text, { characterSpacing: letterSpacing }) + wordSpacing * spaces.length;
     const measuredTextHeight = doc.heightOfString(text, { lineGap: 0 });
     const textHeight = measuredTextHeight;
@@ -373,6 +373,7 @@ function renderInlineRuns(runs, ctx, { baseStyles, align, lineGap, tag }) {
         const linkOpts = getRunLinkTextOptions(item.run, {
           enableInternalAnchors: ctx?.options?.enableInternalAnchors,
         });
+        selectFontForInline(doc, item.styles, !!item.run.bold, !!item.run.italic, item.size, item.run.text);
         doc.text(item.run.text || '', x + item.border + item.padL, textY, { lineGap: 0, ...linkOpts });
       }
 
@@ -382,6 +383,25 @@ function renderInlineRuns(runs, ctx, { baseStyles, align, lineGap, tag }) {
   }
 
   return y - layout.y;
+}
+
+function renderInlineRunsAt(runs, ctx, { baseStyles, align, lineGap, tag, x, y, width, measureOnly = false }) {
+  const { doc, layout } = ctx;
+  const inlineLayout = new Layout(doc, {
+    margins: {
+      left: x,
+      right: Math.max(0, doc.page.width - (x + width)),
+      top: y,
+      bottom: layout.marginBottom,
+    },
+    measureOnly: measureOnly || !!ctx?.measureOnly,
+  });
+  inlineLayout.atStartOfPage = false;
+  return renderInlineRuns(
+    runs,
+    { ...ctx, layout: inlineLayout, measureOnly: measureOnly || !!ctx?.measureOnly },
+    { baseStyles, align, lineGap, tag }
+  );
 }
 
 async function renderNode(node, ctx) {
@@ -398,7 +418,7 @@ async function renderNode(node, ctx) {
     const size = BASE_PT;
     const gap = lineGapFor(size, {}, 'div');
     const textAlignValue = ctx.inheritedAlign || 'left';
-    selectFontForInline(doc, {}, false, false, size);
+    selectFontForInline(doc, {}, false, false, size, text);
     const h = doc.heightOfString(text, {
       width: layout.contentWidth(),
       lineGap: gap,
@@ -444,16 +464,18 @@ async function renderNode(node, ctx) {
   const finishBlock = layout.newBlock(mt, mb);
   registerAnchorDestination(node, ctx);
   const color = styleColor(styles, 'color', '#000');
-  const align = textAlign(styles);
-  const alignCtx = align !== 'left' ? { ...childCtx, inheritedAlign: align } : childCtx;
+  const hasTextAlign = styles['text-align'] != null;
+  const align = hasTextAlign ? textAlign(styles) : (ctx.inheritedAlign || textAlign(styles));
+  const alignCtx = { ...childCtx, inheritedAlign: align };
 
   if (display === 'inline' || display === 'inline-block') {
     const size = styleNumber(styles, 'font-size', BASE_PT);
     const gap = lineGapFor(size, styles, tag);
     const runs = inlineRuns(node);
     if (!runs.length) return;
-    selectFontForInline(doc, styles, false, false, size);
-    const estimated = doc.heightOfString(runs.map((r) => r.text).join(''), {
+    const inlineText = runs.map((r) => r.text).join('');
+    selectFontForInline(doc, styles, false, false, size, inlineText);
+    const estimated = doc.heightOfString(inlineText, {
       width: layout.contentWidth(),
       align,
       lineGap: gap,
@@ -543,7 +565,7 @@ async function renderNode(node, ctx) {
       const blockWidth = Math.max(0, layout.contentWidth() - marginLeft - marginRight);
       const blockX = layout.x + marginLeft;
       const availableWidth = blockWidth - paddingLeft - paddingRight;
-      selectFontForInline(doc, styles, false, false, size);
+      selectFontForInline(doc, styles, false, false, size, plain);
       const spaces = (plain.match(/ /g) || []).length;
       const textWidth = doc.widthOfString(plain, { characterSpacing: letterSpacing }) + wordSpacing * spaces;
       const isSingleLine = textWidth <= availableWidth && !plain.includes('\n');
@@ -574,9 +596,18 @@ async function renderNode(node, ctx) {
         doc.fillColor(color);
         doc.x = blockX + paddingLeft;
         doc.y = startY + paddingTop;
+        const hasLinks = runs.some((r) => r.href);
+        if (!hasLinks && (align !== 'left' || runs.length > 1)) {
+          selectFontForInline(doc, styles, false, false, size, plain);
+          doc.fillColor(color).text(plain, {
+            width: availableWidth,
+            align,
+            lineGap: gap,
+          });
+        } else {
         for (const run of runs) {
           const s = { ...styles, ...(run.styles || {}) };
-          selectFontForInline(doc, s, !!run.bold, !!run.italic);
+          selectFontForInline(doc, s, !!run.bold, !!run.italic, null, run.text);
           const linkOpts = getRunLinkTextOptions(run, {
             enableInternalAnchors: ctx?.options?.enableInternalAnchors,
           });
@@ -590,6 +621,7 @@ async function renderNode(node, ctx) {
           });
         }
         doc.text('', { continued: false });
+        }
       }
       layout.y = Math.max(layout.y, startY + boxH);
       finishBlock();
@@ -675,7 +707,7 @@ async function renderNode(node, ctx) {
     const borderBottom =
       borderBottomStyle === 'none' || borderBottomStyle === 'hidden' || !borderBottomPaint ? 0 : borderBottomWidth;
 
-    selectFontForInline(doc, styles, true, false, size);
+    selectFontForInline(doc, styles, true, false, size, text);
     const h = doc.heightOfString(text, {
       width: layout.contentWidth(),
       align,
@@ -696,7 +728,7 @@ async function renderNode(node, ctx) {
       doc.y = textY;
       for (const run of runs) {
         const s = { ...styles, ...(run.styles || {}) };
-        selectFontForInline(doc, s, true, !!run.italic);
+        selectFontForInline(doc, s, true, !!run.italic, null, run.text);
         const linkOpts = getRunLinkTextOptions(run, {
           enableInternalAnchors: ctx?.options?.enableInternalAnchors,
         });
@@ -750,15 +782,28 @@ async function renderNode(node, ctx) {
       : borderLeftColor;
     const borderLeft = borderLeftWidth > 0 && borderLeftPaint ? borderLeftWidth : 0;
 
-    selectFontForInline(doc, styles, false, false, size);
+    selectFontForInline(doc, styles, false, false, size, plain);
     const availableWidth = layout.contentWidth() - paddingLeft - paddingRight;
-    let h = doc.heightOfString(plain, {
-      width: availableWidth,
-      align,
-      lineGap: gap,
-      characterSpacing: letterSpacing,
-      wordSpacing,
-    });
+    const hasLinks = runs.some((r) => r.href);
+    const renderRunsAsGroup = !hasLinks && (align !== 'left' || runs.length > 1);
+    let h = renderRunsAsGroup
+      ? renderInlineRunsAt(runs, ctx, {
+          baseStyles: styles,
+          align,
+          lineGap: gap,
+          tag,
+          x: layout.x + paddingLeft,
+          y: layout.y + paddingTop,
+          width: availableWidth,
+          measureOnly: true,
+        })
+      : doc.heightOfString(plain, {
+          width: availableWidth,
+          align,
+          lineGap: gap,
+          characterSpacing: letterSpacing,
+          wordSpacing,
+        });
     let boxHeight = h + paddingTop + paddingBottom;
     if (useInlineBoxes) {
       layout.ensureSpace(boxHeight);
@@ -789,27 +834,39 @@ async function renderNode(node, ctx) {
     if (!measureOnly) doc.y = startY + paddingTop;
 
     if (!measureOnly && !useInlineBoxes) {
-      for (const run of runs) {
-        const s = { ...styles, ...(run.styles || {}) };
-        selectFontForInline(doc, s, !!run.bold, !!run.italic);
-        const ls = styleNumber(s, 'letter-spacing', null, { baseSize: size });
-        const ws = styleNumber(s, 'word-spacing', null, { baseSize: size });
-        const linkOpts = getRunLinkTextOptions(run, {
-          enableInternalAnchors: ctx?.options?.enableInternalAnchors,
-        });
-        const textOptions = {
-          width: availableWidth,
+      if (renderRunsAsGroup) {
+        h = renderInlineRunsAt(runs, ctx, {
+          baseStyles: styles,
           align,
           lineGap: gap,
-          continued: true,
-          underline: !!run.underline,
-          ...linkOpts,
-        };
-        if (ls != null) textOptions.characterSpacing = ls;
-        if (ws != null) textOptions.wordSpacing = ws;
-        doc.fillColor(styleColor(s, 'color', color)).text(run.text, textOptions);
+          tag,
+          x: layout.x + paddingLeft,
+          y: startY + paddingTop,
+          width: availableWidth,
+        });
+      } else {
+        for (const run of runs) {
+          const s = { ...styles, ...(run.styles || {}) };
+          selectFontForInline(doc, s, !!run.bold, !!run.italic, null, run.text);
+          const ls = styleNumber(s, 'letter-spacing', null, { baseSize: size });
+          const ws = styleNumber(s, 'word-spacing', null, { baseSize: size });
+          const linkOpts = getRunLinkTextOptions(run, {
+            enableInternalAnchors: ctx?.options?.enableInternalAnchors,
+          });
+          const textOptions = {
+            width: availableWidth,
+            align,
+            lineGap: gap,
+            continued: true,
+            underline: !!run.underline,
+            ...linkOpts,
+          };
+          if (ls != null) textOptions.characterSpacing = ls;
+          if (ws != null) textOptions.wordSpacing = ws;
+          doc.fillColor(styleColor(s, 'color', color)).text(run.text, textOptions);
+        }
+        doc.text('', { continued: false });
       }
-      doc.text('', { continued: false });
     }
 
     if (!useInlineBoxes) {
@@ -921,7 +978,7 @@ async function renderNode(node, ctx) {
         const size = styleNumber(styles, 'font-size', BASE_PT);
         const gap = lineGapFor(size, styles, tag);
         const plain = gatherPlainText(node);
-        selectFontForInline(doc, styles, false, false, size);
+        selectFontForInline(doc, styles, false, false, size, plain);
         const letterSpacing = styleNumber(styles, 'letter-spacing', 0, { baseSize: size });
         const wordSpacing = styleNumber(styles, 'word-spacing', 0, { baseSize: size });
         const spaces = (plain.match(/ /g) || []).length;
@@ -1058,7 +1115,7 @@ async function renderNode(node, ctx) {
           let first = true;
           for (const child of children) {
             if (!first) layout.cursorToNextLine(rowGap);
-            await renderNode(child, align !== 'left' ? { ...childCtx, inheritedAlign: align } : childCtx);
+            await renderNode(child, alignCtx);
             first = false;
           }
           usedHeight = layout.y - contentStartY;
@@ -1113,7 +1170,7 @@ async function renderNode(node, ctx) {
 
         if (useInlineBoxes) {
           const plain = runs.map((r) => r.text).join('');
-          selectFontForInline(doc, styles, false, false, size);
+          selectFontForInline(doc, styles, false, false, size, plain);
           const estimated = doc.heightOfString(plain, {
             width: layout.contentWidth(),
             align,
@@ -1127,14 +1184,29 @@ async function renderNode(node, ctx) {
           const plain = runs.map((r) => r.text).join('');
           const letterSpacing = styleNumber(styles, 'letter-spacing', 0, { baseSize: size });
           const wordSpacing = styleNumber(styles, 'word-spacing', 0, { baseSize: size });
-          selectFontForInline(doc, styles, false, false, size);
+          selectFontForInline(doc, styles, false, false, size, plain);
           const spaces = (plain.match(/ /g) || []).length;
           const textWidth = doc.widthOfString(plain, { characterSpacing: letterSpacing }) + wordSpacing * spaces;
           const lineHeight = lineHeightValue(styles, size, tag);
           const singleLine = !plain.includes('\n') && textWidth <= layout.contentWidth();
-          const h = singleLine
-            ? lineHeight
-            : doc.heightOfString(plain, {
+          const hasLineBreaks = plain.includes('\n');
+          const allSameStyle = !runs.some((r) => r.bold || r.italic || r.href);
+          const hasLinks = runs.some((r) => r.href);
+          const renderRunsAsGroup = !hasLinks && (align !== 'left' || runs.length > 1);
+          const h = renderRunsAsGroup
+            ? renderInlineRunsAt(runs, ctx, {
+                baseStyles: styles,
+                align,
+                lineGap: gap,
+                tag,
+                x: layout.x,
+                y: layout.y,
+                width: layout.contentWidth(),
+                measureOnly: true,
+              })
+            : singleLine
+              ? lineHeight
+              : doc.heightOfString(plain, {
                 width: layout.contentWidth(),
                 align,
                 lineGap: gap,
@@ -1162,11 +1234,18 @@ async function renderNode(node, ctx) {
             const textHeight = singleLine ? doc.currentLineHeight(true) : h;
             const textOffset = hasFrame && singleLine ? Math.max(0, (lineHeight - textHeight) / 2) : 0;
             doc.y = startYInline + textOffset;
-            // When text contains line breaks, render as single text call for correct alignment
-            const hasLineBreaks = plain.includes('\n');
-            const allSameStyle = !runs.some((r) => r.bold || r.italic || r.href);
-            if (hasLineBreaks && allSameStyle) {
-              selectFontForInline(doc, styles, false, false, size);
+            if (renderRunsAsGroup) {
+              renderInlineRunsAt(runs, ctx, {
+                baseStyles: styles,
+                align,
+                lineGap: gap,
+                tag,
+                x: layout.x,
+                y: startYInline + textOffset,
+                width: layout.contentWidth(),
+              });
+            } else if (hasLineBreaks && allSameStyle) {
+              selectFontForInline(doc, styles, false, false, size, plain);
               doc.text(plain, layout.x, startYInline + textOffset, {
                 width: layout.contentWidth(),
                 align,
@@ -1175,7 +1254,7 @@ async function renderNode(node, ctx) {
             } else {
               for (const run of runs) {
                 const s = { ...styles, ...(run.styles || {}) };
-                selectFontForInline(doc, s, !!run.bold, !!run.italic);
+                selectFontForInline(doc, s, !!run.bold, !!run.italic, null, run.text);
                 const linkOpts = getRunLinkTextOptions(run, {
                   enableInternalAnchors: ctx?.options?.enableInternalAnchors,
                 });
@@ -1195,7 +1274,7 @@ async function renderNode(node, ctx) {
       } else {
         const grouped = groupMixedChildren(node.children || [], styles);
         for (const child of grouped) {
-          await renderNode(child, align !== 'left' ? { ...childCtx, inheritedAlign: align } : childCtx);
+          await renderNode(child, alignCtx);
         }
       }
     }

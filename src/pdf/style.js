@@ -245,20 +245,23 @@ function textAlign(styles) {
 }
 
 function lineHeightValue(styles, fontSize, tag) {
-  const CHROME_LH_FACTOR = 0.82;
-
   const raw = styles['line-height'];
-  if (raw == null) return fontSize * defaultLineHeightFor(tag) * CHROME_LH_FACTOR;
+  if (raw == null) return fontSize * defaultLineHeightFor(tag);
 
   const str = String(raw).trim();
-  if (!str || str.toLowerCase() === 'normal') return fontSize * defaultLineHeightFor(tag) * CHROME_LH_FACTOR;
+  if (!str || str.toLowerCase() === 'normal') {
+    return Math.max(fontSize, fontSize * defaultLineHeightFor(tag) * CHROME_LH_FACTOR);
+  }
 
   if (/^-?\d+(\.\d+)?$/.test(str)) {
     const num = parseFloat(str);
-    return num > 0 && num < 10 ? fontSize * num * CHROME_LH_FACTOR : num;
+    return num > 0 && num < 10 ? Math.max(fontSize, fontSize * num) : Math.max(fontSize, num);
   }
 
-  return parsePxWithOptions(str, fontSize * defaultLineHeightFor(tag), { base: fontSize, percentBase: fontSize });
+  return Math.max(
+    fontSize,
+    parsePxWithOptions(str, fontSize * defaultLineHeightFor(tag), { base: fontSize, percentBase: fontSize })
+  );
 }
 
 function lineGapFor(size, styles, tag) {

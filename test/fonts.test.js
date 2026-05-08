@@ -46,6 +46,13 @@ async function run() {
     <p style="font-weight: 400;">Normal weight</p>
   `);
   assertBuffer(weight, 'numeric font weight');
+
+  // Text-aware fallback avoids missing glyph boxes for common currency symbols.
+  const currency = await renderPdfFromHtml(`
+    <p style="font-family: Arial, sans-serif;">Total (₹)</p>
+    <table><tr><th>MRP (₹)</th><td>₹ 5,14,119.00</td></tr></table>
+  `);
+  assertBuffer(currency, 'currency glyph fallback');
 }
 
 module.exports = { name: 'fonts', run };

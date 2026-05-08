@@ -1,4 +1,5 @@
 const assert = require('assert');
+const PDFDocument = require('pdfkit');
 const { renderPdfFromHtml } = require('../src/index.js');
 const { assertBuffer, pageCount } = require('./helpers');
 
@@ -160,6 +161,62 @@ async function run() {
     </div>
   `);
   assertBuffer(flexBr, 'flex with br in children');
+
+  // text-align is inherited by descendant blocks inside flex items
+  const originalText = PDFDocument.prototype.text;
+  const originalFont = PDFDocument.prototype.font;
+  const textCalls = [];
+  const fontCalls = [];
+  let currentFont = null;
+  PDFDocument.prototype.font = function patchedFont(font, ...args) {
+    currentFont = String(font || '');
+    fontCalls.push(currentFont);
+    return originalFont.call(this, font, ...args);
+  };
+  PDFDocument.prototype.text = function patchedText(text, ...args) {
+    const options = args.find((arg) => arg && typeof arg === 'object' && !Array.isArray(arg)) || {};
+    textCalls.push({
+      text: String(text || ''),
+      align: options.align,
+      font: currentFont,
+      x: typeof args[0] === 'number' ? args[0] : null,
+      y: typeof args[1] === 'number' ? args[1] : null,
+    });
+    return originalText.call(this, text, ...args);
+  };
+  try {
+    const inheritedAlign = await renderPdfFromHtml(`
+      <div style="display: flex; justify-content: space-between; font-size: 8pt; line-height: 1.2;">
+        <div>Bank Details</div>
+        <div style="text-align: right;">
+          <div><strong>E-Way Bill No:</strong> 271024512345</div>
+          <div><strong>Transport Mode:</strong> Road</div>
+        </div>
+      </div>
+    `);
+    assertBuffer(inheritedAlign, 'inherited text-align in flex item');
+  } finally {
+    PDFDocument.prototype.text = originalText;
+    PDFDocument.prototype.font = originalFont;
+  }
+  assert.ok(
+    textCalls.some((call) => call.text.includes('E-Way Bill No:') && call.font && call.font.includes('Bold')),
+    'strong text in aligned descendant blocks should keep bold font'
+  );
+  assert.ok(
+    textCalls.some((call) => call.text.includes('271024512345')),
+    'aligned descendant block value should render'
+  );
+  assert.ok(
+    fontCalls.some((font) => font.includes('Bold')),
+    'regression should exercise bold font selection'
+  );
+  const eWay = textCalls.find((call) => call.text.includes('E-Way Bill No:'));
+  const transport = textCalls.find((call) => call.text.includes('Transport Mode:'));
+  assert.ok(
+    eWay && transport && transport.y - eWay.y >= 9,
+    'stacked aligned bold lines should use readable line height'
+  );
 }
 
 module.exports = { name: 'layout-edge', run };

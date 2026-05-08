@@ -61,7 +61,7 @@ async function renderList(node, ctx, ordered = false) {
       doc.text(bullet, doc.x, doc.y, { continued: true });
       const runs = inlineRuns(li);
       for (const run of runs) {
-        selectFontForInline(doc, run.styles || {}, !!run.bold, !!run.italic);
+        selectFontForInline(doc, run.styles || {}, !!run.bold, !!run.italic, null, run.text);
         const linkOpts = getRunLinkTextOptions(run, {
           enableInternalAnchors: ctx?.options?.enableInternalAnchors,
         });

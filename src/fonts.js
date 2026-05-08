@@ -15,6 +15,8 @@ const STYLE_TOKENS = /(bold|black|heavy|demi|italic|oblique|regular|medium|light
 let cachedFonts = null;
 let cachedDirsKey = null;
 const supportCache = new Map();
+const glyphSupportCache = new Map();
+const fallbackFontCache = new Map();
 
 function normalizeName(value) {
   return String(value || '')
@@ -102,6 +104,64 @@ function isFontSupported(filePath) {
   return ok;
 }
 
+function fontSupportsText(filePath, text) {
+  if (!fontkit || !filePath) return true;
+  const chars = Array.from(String(text || '')).filter((ch) => ch && ch.codePointAt(0) > 127);
+  if (!chars.length) return true;
+  const key = `${filePath}|${chars.join('')}`;
+  if (glyphSupportCache.has(key)) return glyphSupportCache.get(key);
+
+  let ok = false;
+  try {
+    const font = fontkit.openSync(filePath);
+    ok = chars.every((ch) => {
+      const glyph = font.glyphForCodePoint(ch.codePointAt(0));
+      return !!glyph && glyph.id > 0;
+    });
+  } catch (err) {
+    if (process.env.HTML_TO_PDF_DEBUG_FONTS === '1') console.warn('[fonts] glyph check failed:', filePath, err.message || err);
+    ok = false;
+  }
+
+  glyphSupportCache.set(key, ok);
+  return ok;
+}
+
+function findFallbackFontForText(text, { bold = false, italic = false } = {}) {
+  const chars = Array.from(String(text || '')).filter((ch) => ch && ch.codePointAt(0) > 127);
+  if (!chars.length) return null;
+  const key = `${chars.join('')}|${bold ? 'b' : 'n'}${italic ? 'i' : 'n'}`;
+  if (fallbackFontCache.has(key)) return fallbackFontCache.get(key);
+
+  const fonts = collectSystemFonts();
+  const supported = fonts.filter((font) => {
+    if (/lastresort/i.test(font.nameNorm) || /lastresort/i.test(font.familyNorm)) return false;
+    return isFontSupported(font.path) && fontSupportsText(font.path, chars.join(''));
+  });
+  if (!supported.length) {
+    fallbackFontCache.set(key, null);
+    return null;
+  }
+
+  const preferredNames = /(noto|sfns|sfcompact|geneva|arial|dejavu|liberation|segoe|sans)/i;
+  let best = null;
+  let bestScore = -Infinity;
+  for (const font of supported) {
+    let score = 0;
+    if (preferredNames.test(font.nameNorm) || preferredNames.test(font.familyNorm)) score += 20;
+    score += bold ? (font.isBold ? 8 : -2) : font.isBold ? -4 : 4;
+    score += italic ? (font.isItalic ? 8 : -2) : font.isItalic ? -4 : 4;
+    if (score > bestScore) {
+      bestScore = score;
+      best = font;
+    }
+  }
+
+  const out = best?.path || supported[0]?.path || null;
+  fallbackFontCache.set(key, out);
+  return out;
+}
+
 function pickFont(fonts, families, { bold = false, italic = false, allowFallback = true } = {}) {
   if (!fonts.length) return null;
   const familyNorms = families.map(normalizeName);
@@ -177,4 +237,4 @@ function resolveSystemFonts(familyNames = []) {
   return { familyMap: resolvedFamilies };
 }
 
-module.exports = { resolveSystemFonts, normalizeName };
+module.exports = { resolveSystemFonts, normalizeName, fontSupportsText, findFallbackFontForText };

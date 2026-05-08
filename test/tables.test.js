@@ -86,6 +86,76 @@ async function run() {
     </table>
   `);
   assertBuffer(nested, 'nested table in cell');
+
+  const { _tableInternals } = require('../src/components/table.js');
+
+  // Table column hints from CSS and HTML width attributes are honored.
+  const fixedWidths = _tableInternals.distributeColumnWidths([40, 180, 60], [20, 80, 30], 330, [60, null, 90]);
+  assert.ok(fixedWidths[0] >= 59 && fixedWidths[0] <= 61, 'first fixed table column width is preserved');
+  assert.ok(fixedWidths[2] >= 89 && fixedWidths[2] <= 91, 'third fixed table column width is preserved');
+
+  const readableWidths = _tableInternals.distributeColumnWidths([36, 168, 96], [90, 44, 44], 300, [36, 168, 96]);
+  assert.ok(readableWidths[0] >= 89, 'narrow explicit table width is raised to readable minimum');
+  assert.ok(readableWidths[1] < 168, 'wide explicit table width gives space back when another column needs it');
+
+  // Browser-default whitespace collapses indentation/newlines, while <br> remains a forced break.
+  const whitespaceCell = {
+    type: 'element',
+    tag: 'td',
+    children: [{ type: 'text', text: '\n\n\nWithout New Line' }],
+  };
+  assert.strictEqual(
+    _tableInternals.cellPlainText(whitespaceCell, {}),
+    'Without New Line',
+    'table cell text collapses source indentation whitespace'
+  );
+
+  const breakCell = {
+    type: 'element',
+    tag: 'td',
+    children: [
+      { type: 'text', text: 'Line 1' },
+      { type: 'element', tag: 'br', children: [] },
+      { type: 'text', text: 'Line 2' },
+    ],
+  };
+  assert.strictEqual(
+    _tableInternals.cellPlainText(breakCell, {}),
+    'Line 1\nLine 2',
+    'br in table cells creates a forced line break'
+  );
+
+  const widthStyles = { width: '70px', 'min-width': '50px' };
+  assert.ok(_tableInternals.cellExplicitWidth({ styles: widthStyles }, 500, 12) > 52, 'css width is parsed');
+  assert.ok(_tableInternals.cellMinWidth({ styles: widthStyles }, 500, 12) > 37, 'css min-width is parsed');
+
+  const htmlWidth = _tableInternals.cellExplicitWidth({ attrs: { width: '8%' }, styles: {} }, 500, 12);
+  assert.ok(htmlWidth >= 39 && htmlWidth <= 41, 'html width attribute percent is parsed');
+
+  const widthStyled = await renderPdfFromHtml(`
+    <table>
+      <tr>
+        <th width="6%">Product</th>
+        <th width="28%">HSN/SAC</th>
+        <th style="min-width: 50px; white-space: nowrap;">Batch</th>
+      </tr>
+      <tr>
+        <td>
+
+
+          Without New Line
+        </td>
+        <td>30049099</td>
+        <td>PX-24H562A</td>
+      </tr>
+      <tr>
+        <td>Line 1<br/>Line 2</td>
+        <td>30041030</td>
+        <td>AMC-2457C</td>
+      </tr>
+    </table>
+  `);
+  assertBuffer(widthStyled, 'table width attributes and whitespace');
 }
 
 module.exports = { name: 'tables', run };
