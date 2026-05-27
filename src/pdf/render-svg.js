@@ -89,8 +89,10 @@ async function renderInlineSvg(node, ctx) {
   const borderColor = styleColor(styles, 'border-color', '#333333');
   const borderPaint = ['none', 'transparent'].includes(String(borderColor).trim().toLowerCase()) ? null : borderColor;
   const hasBorder = borderWidth > 0 && borderPaint && !['none', 'hidden'].includes(borderStyle);
-  let width = styleNumber(styles, 'width', null, { percentBase: layout.contentWidth() });
-  let height = styleNumber(styles, 'height', null);
+  const pctW = layout.contentWidth();
+  const pctH = doc.page.height;
+  let width = styleNumber(styles, 'width', null, { percentBase: pctW });
+  let height = styleNumber(styles, 'height', null, { percentBase: pctH });
   const attrWidth = parseAttrDimension(node.attrs?.width);
   const attrHeight = parseAttrDimension(node.attrs?.height);
 
@@ -101,14 +103,14 @@ async function renderInlineSvg(node, ctx) {
   const aspect = width && height ? width / height : viewBox ? viewBox.w / viewBox.h : null;
 
   const maxW = layout.contentWidth();
-  const maxH = Number.isFinite(styleNumber(styles, 'max-height', Infinity))
-    ? styleNumber(styles, 'max-height', Infinity)
+  const maxH = Number.isFinite(styleNumber(styles, 'max-height', Infinity, { percentBase: pctH }))
+    ? styleNumber(styles, 'max-height', Infinity, { percentBase: pctH })
     : Infinity;
-  const minW = styleNumber(styles, 'min-width', 0);
-  const minH = styleNumber(styles, 'min-height', 0);
+  const minW = styleNumber(styles, 'min-width', 0, { percentBase: pctW });
+  const minH = styleNumber(styles, 'min-height', 0, { percentBase: pctH });
   const widthSpecified = width != null;
   const heightSpecified = height != null;
-  const maxWidthStyle = styleNumber(styles, 'max-width', widthSpecified ? Infinity : maxW);
+  const maxWidthStyle = styleNumber(styles, 'max-width', widthSpecified ? Infinity : maxW, { percentBase: pctW });
 
   if (!width && !height) {
     if (viewBox) {

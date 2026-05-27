@@ -36,8 +36,10 @@ async function renderImage(node, ctx) {
   const ignoreInvalid = !!ctx?.options?.ignoreInvalidImages;
   const imgLoadTimeoutMs = normalizeTimeoutMs(ctx?.options?.imgLoadTimeoutMs ?? ctx?.options?.imgLoadTimeout, 3000);
   const styles = mergeStyles(node);
-  let width = styleNumber(styles, 'width', null);
-  let height = styleNumber(styles, 'height', null);
+  const pctW = layout.contentWidth();
+  const pctH = doc.page.height;
+  let width = styleNumber(styles, 'width', null, { percentBase: pctW });
+  let height = styleNumber(styles, 'height', null, { percentBase: pctH });
   const attrWidth = parseAttrLength(node.attrs?.width);
   const attrHeight = parseAttrLength(node.attrs?.height);
 
@@ -174,12 +176,12 @@ async function renderImage(node, ctx) {
   }
 
   const maxW = layout.contentWidth();
-  const maxH = Number.isFinite(styleNumber(styles, 'max-height', Infinity))
-    ? styleNumber(styles, 'max-height', Infinity)
+  const maxH = Number.isFinite(styleNumber(styles, 'max-height', Infinity, { percentBase: pctH }))
+    ? styleNumber(styles, 'max-height', Infinity, { percentBase: pctH })
     : Infinity;
-  const minW = styleNumber(styles, 'min-width', 0);
-  const minH = styleNumber(styles, 'min-height', 0);
-  const maxWidthStyle = styleNumber(styles, 'max-width', widthSpecified ? Infinity : maxW);
+  const minW = styleNumber(styles, 'min-width', 0, { percentBase: pctW });
+  const minH = styleNumber(styles, 'min-height', 0, { percentBase: pctH });
+  const maxWidthStyle = styleNumber(styles, 'max-width', widthSpecified ? Infinity : maxW, { percentBase: pctW });
   const intrinsicWidthPt = intrinsicWidth ? intrinsicWidth * PX_TO_PT : null;
   const intrinsicHeightPt = intrinsicHeight ? intrinsicHeight * PX_TO_PT : null;
 

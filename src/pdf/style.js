@@ -1,5 +1,6 @@
 const BASE_PT = 12;
 const BODY_LH = 1.2;
+const CHROME_LH_FACTOR = 1.15;
 const em = (n, base = BASE_PT) => n * base;
 const PX_PER_IN = 72;
 const PX_TO_PT = 72 / 96; // map CSS px to PDF points (browser 96dpi vs PDF 72dpi)
@@ -218,14 +219,7 @@ function parseColor(val, fallback = '#000000') {
 }
 
 function mergeStyles(node) {
-  const styles = { ...(node.styles || {}) };
-  if (node.attrs && typeof node.attrs.style === 'string') {
-    node.attrs.style.split(';').forEach((decl) => {
-      const [prop, v] = decl.split(':');
-      if (prop && v) styles[prop.trim()] = v.trim();
-    });
-  }
-  return styles;
+  return { ...(node.styles || {}) };
 }
 
 function styleNumber(styles, key, fallback, opts = {}) {

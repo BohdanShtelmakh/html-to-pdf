@@ -88,7 +88,7 @@ function estimateNodeWidth(node, doc, isInlineDisplay) {
   return maxWidth + padL + padR + borderL + borderR + widthEps;
 }
 
-function estimateNodeMinWidth(node, doc, isInlineDisplay) {
+function estimateNodeMinWidth(node, doc, isInlineDisplay, containerWidth = null) {
   if (!node) return 0;
   if (node.type === 'text') {
     selectFontForInline(doc, {}, false, false, BASE_PT, node.text || '');
@@ -102,8 +102,8 @@ function estimateNodeMinWidth(node, doc, isInlineDisplay) {
   const borderWidth = styleNumber(styles, 'border-width', 0);
   const borderL = styleNumber(styles, 'border-left-width', borderWidth);
   const borderR = styleNumber(styles, 'border-right-width', borderWidth);
-  const explicitWidth = styleNumber(styles, 'width', null);
-  const minWidth = styleNumber(styles, 'min-width', null);
+  const explicitWidth = styleNumber(styles, 'width', null, { percentBase: containerWidth });
+  const minWidth = styleNumber(styles, 'min-width', null, { percentBase: containerWidth });
   if (explicitWidth != null) return Math.max(0, explicitWidth);
   const lines = collectLineRuns(node, styles, isInlineDisplay, mergeStyles);
   let maxWidth = 0;
@@ -173,7 +173,7 @@ async function renderFlexRow(children, ctx, { startX, startY, width, gap, rowGap
     const explicitWidth = styleNumber(childStyles, 'width', null, { percentBase: width });
     const baseWidth = basis ?? explicitWidth ?? estimateNodeWidth(child, doc, isInlineDisplay);
     const grow = parseFlexGrow(childStyles);
-    const minWidth = estimateNodeMinWidth(child, doc, isInlineDisplay);
+    const minWidth = estimateNodeMinWidth(child, doc, isInlineDisplay, width);
     return {
       child,
       baseWidth: Math.max(0, baseWidth || 0),
