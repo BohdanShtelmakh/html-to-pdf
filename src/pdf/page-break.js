@@ -1,5 +1,26 @@
 const { Layout } = require('./layout');
 
+function pageTopMargin(layout) {
+  const docTop = layout?.doc?.page?.margins?.top;
+  return Number.isFinite(docTop) ? docTop : layout.marginTop;
+}
+
+function pageBottomMargin(layout) {
+  const docBot = layout?.doc?.page?.margins?.bottom;
+  return Number.isFinite(docBot) ? docBot : layout.marginBottom;
+}
+
+function resetLayoutToNewPage(layout) {
+  const top = pageTopMargin(layout);
+  const bot = pageBottomMargin(layout);
+  layout.marginTop = top;
+  layout.marginBottom = bot;
+  layout.x = layout.marginLeft;
+  layout.y = top;
+  layout.pendingBottomMargin = 0;
+  layout.atStartOfPage = true;
+}
+
 function applyPageBreakAfter(styles, ctx, node) {
   if (!styles || ctx?.measureOnly) return;
   const value = String(styles['page-break-after'] || '')
@@ -9,10 +30,7 @@ function applyPageBreakAfter(styles, ctx, node) {
   const parentTag = String(node?._parentTag || '').toLowerCase();
   if (value === 'always' && !(isLast && (parentTag === 'body' || parentTag === 'root'))) {
     ctx.layout.doc.addPage();
-    ctx.layout.x = ctx.layout.marginLeft;
-    ctx.layout.y = ctx.layout.marginTop;
-    ctx.layout.pendingBottomMargin = 0;
-    ctx.layout.atStartOfPage = true;
+    resetLayoutToNewPage(ctx.layout);
   }
 }
 
@@ -25,10 +43,7 @@ function applyPageBreakBefore(styles, ctx) {
   if (!shouldBreak) return;
   if (ctx.layout.atStartOfPage) return;
   ctx.layout.doc.addPage();
-  ctx.layout.x = ctx.layout.marginLeft;
-  ctx.layout.y = ctx.layout.marginTop;
-  ctx.layout.pendingBottomMargin = 0;
-  ctx.layout.atStartOfPage = true;
+  resetLayoutToNewPage(ctx.layout);
 }
 
 function shouldAvoidBreakInside(styles = {}) {
@@ -47,8 +62,10 @@ function maybeApplyBreakInsideAvoid(node, styles, ctx) {
   if (display === 'inline' || display === 'inline-block' || display === 'none') return;
 
   const { doc, layout } = ctx;
-  const available = doc.page.height - layout.marginBottom - layout.y;
-  const fullPage = doc.page.height - layout.marginTop - layout.marginBottom;
+  const pageTop = pageTopMargin(layout);
+  const pageBot = pageBottomMargin(layout);
+  const available = doc.page.height - pageBot - layout.y;
+  const fullPage = doc.page.height - pageTop - pageBot;
   if (available <= 0) return;
 
   const measureLayout = new Layout(doc, {
@@ -70,10 +87,7 @@ function maybeApplyBreakInsideAvoid(node, styles, ctx) {
     if (estimated <= available) return;
     if (estimated > fullPage) return;
     layout.doc.addPage();
-    layout.x = layout.marginLeft;
-    layout.y = layout.marginTop;
-    layout.pendingBottomMargin = 0;
-    layout.atStartOfPage = true;
+    resetLayoutToNewPage(layout);
   });
 }
 
