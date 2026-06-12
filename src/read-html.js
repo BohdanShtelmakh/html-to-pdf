@@ -362,20 +362,6 @@ const HEADING_SCALE = {
   h6: 0.75,
 };
 
-function hasExplicitFontSize(el, rules) {
-  const inline = parseInlineStyle(el.getAttribute && el.getAttribute('style'));
-  if (inline.some((decl) => decl.property === 'font-size')) return true;
-
-  return rules.some((rule) => {
-    try {
-      if (!el.matches || !el.matches(rule.selector)) return false;
-    } catch {
-      return false;
-    }
-    return (rule.declarations || []).some((decl) => decl.property === 'font-size');
-  });
-}
-
 const NON_INHERITED_STYLES = [
   'width',
   'height',
@@ -458,20 +444,6 @@ const NON_INHERITED_STYLES = [
   'clip',
   'clip-path',
 ];
-function getDeclarationBySelector(rules, selector, property) {
-  if (!selector || typeof selector.matches !== 'function') return undefined;
-  return rules
-    .filter((rule) => {
-      try {
-        return selector.matches(rule.selector);
-      } catch {
-        return false;
-      }
-    })
-    .flatMap((rule) => rule.declarations)
-    .find((decl) => decl.property === property)?.value;
-}
-
 function computeStylesForElement(el, rules, parentStyles = {}) {
   const styles = {};
   for (const [key, val] of Object.entries(parentStyles)) {
@@ -479,25 +451,32 @@ function computeStylesForElement(el, rules, parentStyles = {}) {
   }
 
   const tagName = el.tagName.toLowerCase();
+
+  // Default inheritance for inheritable properties (matched rules override below).
+  // An explicit `inherit` value coming from a matched rule is resolved later in
+  // the dedicated `inherit`-keyword pass, so it needs no special case here.
   for (const prop of INHERITABLE) {
     const parentVal = parentStyles[prop];
-
     const allowInherit =
       parentVal != null && !NON_INHERITED_STYLES.includes(prop) && !(isHeadingTag(tagName) && prop === 'font-size');
-    if (getDeclarationBySelector(rules, el, prop) === 'inherit' && parentVal != null) {
-      styles[prop] = parentVal;
-    } else if (allowInherit) {
-      styles[prop] = parentVal;
+    if (allowInherit) styles[prop] = parentVal;
+  }
+
+  // Match every rule against this element exactly once, then derive the winning
+  // declaration per property. (Previously the rule set was scanned ~20+ times
+  // per element — once per inheritable property and again for font-size — which
+  // dominated parse time via jsdom's slow Element.matches.)
+  const matched = [];
+  for (const r of rules) {
+    try {
+      if (el.matches && el.matches(r.selector)) matched.push(r);
+    } catch {
+      // invalid / unsupported selector — skip
     }
   }
 
   const best = {};
-  for (const r of rules) {
-    try {
-      if (!el.matches || !el.matches(r.selector)) continue;
-    } catch {
-      continue;
-    }
+  for (const r of matched) {
     for (const { property, value, important } of r.declarations) {
       if (!property) continue;
       const key = property.toLowerCase();
@@ -535,13 +514,18 @@ function computeStylesForElement(el, rules, parentStyles = {}) {
     else delete styles[prop];
   }
 
+  // Reuse the already-matched rule set + inline declarations instead of
+  // re-scanning every rule again just to detect an explicit font-size.
+  const explicitFontSize =
+    inline.some((d) => d.property === 'font-size') ||
+    matched.some((r) => r.declarations.some((d) => d.property === 'font-size'));
   const parentFontSize = parsePxWithOptions(parentStyles['font-size'], BASE_PT);
   const baseFontSize = Number.isFinite(parentFontSize) ? parentFontSize : BASE_PT;
   const fontSizeValue =
     styles['font-size'] != null
       ? parsePxWithOptions(styles['font-size'], baseFontSize, { base: baseFontSize, percentBase: baseFontSize })
       : baseFontSize;
-  if (isHeadingTag(tagName) && !hasExplicitFontSize(el, rules)) {
+  if (isHeadingTag(tagName) && !explicitFontSize) {
     styles['font-size'] = fontSizeValue * (HEADING_SCALE[tagName] || 1);
   } else {
     styles['font-size'] = fontSizeValue;
@@ -640,11 +624,13 @@ async function parseHtmlToObject(
     });
     const timeoutPromise = new Promise((resolve) => setTimeout(resolve, loadTimeoutMs));
     await Promise.race([loadPromise, timeoutPromise]);
-  }
 
-  // Allow JSDOM a brief settling period for any remaining async resource
-  // loading (stylesheets, images) before we snapshot the DOM tree.
-  await new Promise((r) => setTimeout(r, 50));
+    // Brief settling period for any still-pending async resource loads
+    // (stylesheets, images) before we snapshot the DOM tree. Only needed when
+    // external resources are actually being fetched — with fetchExternalCss
+    // off, JSDOM parses synchronously and this would just be dead latency.
+    await new Promise((r) => setTimeout(r, 50));
+  }
 
   const { document } = dom.window;
 
