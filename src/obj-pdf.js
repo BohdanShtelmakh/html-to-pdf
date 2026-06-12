@@ -4,6 +4,9 @@ const { Layout } = require('./pdf/layout');
 const { renderNode } = require('./pdf/render-node');
 const { parsePxWithOptions, parseMarginBox } = require('./pdf/style');
 const { resolveSystemFonts } = require('./fonts');
+const { resolveEmojiFont } = require('./emoji/resolve');
+const { createEmojiRegistry } = require('./emoji/type3');
+const { splitEmojiRuns } = require('./emoji/detect');
 
 function parseFontFamilies(value) {
   if (!value) return [];
@@ -129,9 +132,35 @@ async function makePdf(json, options = {}) {
 
   if (familyMap && Object.keys(familyMap).length) doc._fontFamilyMap = familyMap;
 
+  // Color-emoji setup. First do a cheap tree scan for emoji graphemes; only if
+  // the document actually contains emoji do we resolve a color font (which may
+  // open a large system .ttc) and pre-embed each distinct grapheme as a Type 3
+  // glyph. Preloading is async (PNG inflate); the render path below is sync and
+  // only does cache lookups. Silently disabled when no usable color font exists.
+  const graphemes = new Set();
+  const collectEmoji = (node) => {
+    if (!node) return;
+    if (node.type === 'text') {
+      for (const seg of splitEmojiRuns(node.text || '')) {
+        if (seg.isEmoji) graphemes.add(seg.text);
+      }
+    }
+    if (node.children) node.children.forEach(collectEmoji);
+  };
+  collectEmoji(json);
+  if (graphemes.size) {
+    const resolvedEmoji = await resolveEmojiFont(options);
+    const emojiRegistry = resolvedEmoji ? createEmojiRegistry(doc, resolvedEmoji) : null;
+    if (emojiRegistry) {
+      for (const g of graphemes) await emojiRegistry.prepare(g);
+      if (emojiRegistry.glyphCache.size) doc._emoji = emojiRegistry;
+    }
+  }
+
   const layout = new Layout(doc, { margins: doc.page.margins });
   const runtime = { namedDestinations: new Set() };
   await renderNode(json, { doc, layout, options, runtime });
+  if (doc._emoji) doc._emoji.finalize();
   const docDone = new Promise((resolve, reject) => {
     doc.on('end', resolve);
     doc.on('error', reject);

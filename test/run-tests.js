@@ -13,6 +13,7 @@ const tests = [
   require('./fonts.test'),
   require('./elements.test'),
   require('./svg.test'),
+  require('./emoji.test'),
 ];
 
 async function main() {

@@ -24,6 +24,14 @@ export interface RenderOptions {
   };
   svgScale?: number;
   svgDpi?: number;
+  /** Path to a color-emoji font (sbix or COLRv0) used to render native color emoji. */
+  emojiFont?: string;
+  /** Use a known system emoji font (Apple Color Emoji / Segoe UI Emoji) when no emojiFont is given. Default true. */
+  autoResolveEmojiFont?: boolean;
+  /** Opt-in: download an openly-licensed Twemoji (COLRv0) font when none is available locally. Default false. */
+  autoDownloadEmojiFont?: boolean;
+  /** Override the cache directory used for the auto-downloaded emoji font. */
+  emojiFontCacheDir?: string;
   fonts?: Record<string, string | FontFamilyPaths>;
 }
 

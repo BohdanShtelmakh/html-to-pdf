@@ -143,6 +143,45 @@ You can supply custom font paths via the `fonts` option (per-family mapping).
 
 - Glyph coverage depends on the font files you provide. Emoji, CJK, and other Unicode characters require fonts that include those glyphs.
 
+## Color emoji
+
+Color emoji are rendered as native PDF **Type 3** fonts — the same mechanism Chromium uses — so the result is real, **searchable/selectable text**, not loose images or per-emoji SVG. COLRv0 fonts (Segoe UI Emoji, Twemoji) embed as crisp **vector** glyphs; sbix fonts (Apple Color Emoji) embed each glyph's bitmap inside the Type 3 glyph (exactly as Chromium does for Apple emoji).
+
+Options:
+- `emojiFont`: path to a color-emoji font (sbix or COLRv0) to use.
+- `autoResolveEmojiFont`: use a known system emoji font (Apple Color Emoji on macOS, Segoe UI Emoji on Windows) when no `emojiFont` is given (default: `true`).
+- `autoDownloadEmojiFont`: opt-in — download an openly-licensed Twemoji (COLRv0) font when none is available locally (default: `false`).
+- `emojiFontCacheDir`: override the cache directory for the auto-downloaded font.
+
+```js
+const pdfBuffer = await renderPdfFromHtml('<p>Hello 😁 world</p>', {
+  // Use a specific color-emoji font:
+  emojiFont: '/path/to/AppleColorEmoji.ttc',
+  // ...or let it find a system font (default), and/or fall back to a download:
+  autoResolveEmojiFont: true,
+  autoDownloadEmojiFont: true,
+  emojiFontCacheDir: '/tmp/emoji-fonts',
+});
+```
+
+### Supported font formats
+
+Only the formats the underlying engine (`fontkit`) can actually decode are supported:
+
+| Format | Example fonts | Supported |
+|:-------|:--------------|:---------:|
+| sbix | Apple Color Emoji | ✅ |
+| COLRv0 | Segoe UI Emoji, Twemoji | ✅ |
+| COLRv1 | modern Noto Color Emoji | ❌ |
+| CBDT/CBLC | older Noto Color Emoji | ❌ |
+| SVG-in-OpenType | various | ❌ |
+
+### Linux / serverless caveat
+
+On a bare Linux server there is usually **no `fontkit`-readable color-emoji font** (the default Noto Color Emoji is COLRv1). To get color emoji there you must either supply `emojiFont` pointing at an sbix/COLRv0 font, or enable `autoDownloadEmojiFont` to fetch Twemoji. If no usable font is found, emoji simply fall back to the regular text font.
+
+> ⚠️ Apple Color Emoji and Segoe UI Emoji are **proprietary** and are **never bundled** with this library. If you point `emojiFont` at such a font on your own server, ensuring you have the right to use it is your responsibility. Only the `autoDownloadEmojiFont` path fetches an openly-licensed font (Twemoji).
+
 ## Limitations
 
 - Not a full Chromium renderer

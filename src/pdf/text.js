@@ -1,5 +1,6 @@
 const { BASE_PT, mergeStyles, styleNumber, lineHeightValue, textDecorations, styleColor } = require('./style');
 const { normalizeName, fontSupportsText, findFallbackFontForText } = require('../fonts');
+const { splitEmojiRuns } = require('../emoji/detect');
 
 const fontDebugCache = new Set();
 
@@ -79,11 +80,22 @@ function inlineRuns(node, parentStyles = {}) {
     if (!n) return;
 
     if (n.type === 'text') {
-      runs.push({
-        text: n.text || '',
-        ...inherited,
-        isLink: !!inherited.href,
-      });
+      // Split into emoji / non-emoji segments so color emoji become atomic runs
+      // (each one grapheme cluster) that the layout engine positions and the
+      // Type 3 emitter draws; plain text stays a single run as before.
+      const segments = splitEmojiRuns(n.text || '');
+      if (segments.length <= 1 && !(segments[0] && segments[0].isEmoji)) {
+        runs.push({ text: n.text || '', ...inherited, isLink: !!inherited.href });
+        return;
+      }
+      for (const seg of segments) {
+        runs.push({
+          text: seg.text,
+          ...inherited,
+          isLink: !!inherited.href,
+          ...(seg.isEmoji ? { isEmoji: true, grapheme: seg.text } : {}),
+        });
+      }
       return;
     }
     if (n.type !== 'element') return;

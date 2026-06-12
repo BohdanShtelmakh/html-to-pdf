@@ -2,6 +2,10 @@ const { styleNumber, styleColor, lineHeightValue } = require('./style');
 const { inlineRuns, selectFontForInline, gatherPlainText } = require('./text');
 const { getRunLinkTextOptions } = require('./link');
 
+function liHasEmoji(doc, runs) {
+  return !!doc._emoji && runs.some((r) => r.isEmoji);
+}
+
 async function renderList(node, ctx, ordered = false) {
   const { doc, layout } = ctx;
   const measureOnly = !!ctx?.measureOnly;
@@ -30,10 +34,30 @@ async function renderList(node, ctx, ordered = false) {
     doc.fontSize(fontSize);
     if (!measureOnly) doc.fillColor('#000');
 
-    const h = doc.heightOfString(bullet + text, {
-      width: layout.contentWidth() - padL - padR,
-      lineGap,
-    });
+    // When the item contains color emoji, route bullet + text through the manual
+    // line-breaker (Type 3 glyphs can't ride the continued-text path).
+    const liRuns = inlineRuns(li);
+    const useEmojiPath = liHasEmoji(doc, liRuns);
+    const emojiRuns = useEmojiPath
+      ? [{ text: bullet, styles: li.styles || {} }, ...liRuns]
+      : null;
+    const { renderInlineRunsAt } = useEmojiPath ? require('./render-node') : {};
+
+    const h = useEmojiPath
+      ? renderInlineRunsAt(emojiRuns, ctx, {
+          baseStyles: li.styles || {},
+          align: 'left',
+          lineGap,
+          tag: 'li',
+          x: layout.x + padL,
+          y: layout.y + padT,
+          width: layout.contentWidth() - padL - padR,
+          measureOnly: true,
+        })
+      : doc.heightOfString(bullet + text, {
+          width: layout.contentWidth() - padL - padR,
+          lineGap,
+        });
     const totalHeight = padT + h + padB + borderBottomWidth;
     const debug = process.env.HTML_TO_PDF_DEBUG === '1';
     if (debug) {
@@ -58,20 +82,31 @@ async function renderList(node, ctx, ordered = false) {
       doc.x = layout.x + padL;
       doc.y = layout.y + padT;
 
-      doc.text(bullet, doc.x, doc.y, { continued: true });
-      const runs = inlineRuns(li);
-      for (const run of runs) {
-        selectFontForInline(doc, run.styles || {}, !!run.bold, !!run.italic, null, run.text);
-        const linkOpts = getRunLinkTextOptions(run, {
-          enableInternalAnchors: ctx?.options?.enableInternalAnchors,
-        });
-        doc.fillColor(styleColor(run.styles || {}, 'color', '#000')).text(run.text, {
+      if (useEmojiPath) {
+        renderInlineRunsAt(emojiRuns, ctx, {
+          baseStyles: li.styles || {},
+          align: 'left',
           lineGap,
-          continued: true,
-          ...linkOpts,
+          tag: 'li',
+          x: layout.x + padL,
+          y: layout.y + padT,
+          width: layout.contentWidth() - padL - padR,
         });
+      } else {
+        doc.text(bullet, doc.x, doc.y, { continued: true });
+        for (const run of liRuns) {
+          selectFontForInline(doc, run.styles || {}, !!run.bold, !!run.italic, null, run.text);
+          const linkOpts = getRunLinkTextOptions(run, {
+            enableInternalAnchors: ctx?.options?.enableInternalAnchors,
+          });
+          doc.fillColor(styleColor(run.styles || {}, 'color', '#000')).text(run.text, {
+            lineGap,
+            continued: true,
+            ...linkOpts,
+          });
+        }
+        doc.text('', { continued: false });
       }
-      doc.text('', { continued: false });
     }
 
     if (!measureOnly && borderBottomWidth > 0) {

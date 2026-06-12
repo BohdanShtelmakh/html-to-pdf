@@ -362,6 +362,40 @@ async function renderBlockCell(cell, ctx, x, y, width, bottomMargin) {
   }
 }
 
+// Header cells are bold by default; force bold on the non-emoji runs so the
+// manual breaker keeps the weight that selectFontForInline would have applied.
+function emojiCellRuns(runs, isHeader) {
+  if (!isHeader) return runs;
+  return runs.map((r) => (r.isEmoji ? r : { ...r, bold: true }));
+}
+
+function measureEmojiCell(ctx, runs, cellStyles, isHeader, innerWidth, align, lineGap, tag) {
+  const { renderInlineRunsAt } = require('../pdf/render-node');
+  return renderInlineRunsAt(emojiCellRuns(runs, isHeader), ctx, {
+    baseStyles: cellStyles || {},
+    align,
+    lineGap,
+    tag: tag || 'td',
+    x: 0,
+    y: 0,
+    width: innerWidth,
+    measureOnly: true,
+  });
+}
+
+function drawEmojiCell(ctx, runs, cellStyles, isHeader, x, y, innerWidth, align, lineGap, tag) {
+  const { renderInlineRunsAt } = require('../pdf/render-node');
+  renderInlineRunsAt(emojiCellRuns(runs, isHeader), ctx, {
+    baseStyles: cellStyles || {},
+    align,
+    lineGap,
+    tag: tag || 'td',
+    x,
+    y,
+    width: innerWidth,
+  });
+}
+
 async function renderTable(node, ctx, tableStyles = {}) {
   const { doc, layout } = ctx;
   const measureOnly = !!ctx?.measureOnly;
@@ -457,17 +491,20 @@ async function renderTable(node, ctx, tableStyles = {}) {
       const rawText = gatherPlainText(cell) || '';
       const normalizedRuns = normalizeCellRuns(inlineRuns(cell, cellStyles), cellStyles);
       const renderPlainText = text !== rawText || text.includes('\n') || isNowrap(cellStyles);
+      const cellHasEmoji = !!doc._emoji && !hasBlockCellContent(cell) && normalizedRuns.some((r) => r.isEmoji);
       const h = hasBlockCellContent(cell)
         ? await measureBlockCell(cell, ctx, 0, innerWidth, 0, layout.marginBottom)
-        : renderPlainText
-          ? measureCellRuns(doc, normalizedRuns, {
-              width: innerWidth,
-              align,
-              lineGap,
-              isHeader,
-              nowrap: isNowrap(cellStyles),
-            })
-          : doc.heightOfString(text, { width: innerWidth, lineGap, lineBreak: !isNowrap(cellStyles) });
+        : cellHasEmoji
+          ? measureEmojiCell(ctx, normalizedRuns, cellStyles, isHeader, innerWidth, align, lineGap, cell.tag)
+          : renderPlainText
+            ? measureCellRuns(doc, normalizedRuns, {
+                width: innerWidth,
+                align,
+                lineGap,
+                isHeader,
+                nowrap: isNowrap(cellStyles),
+              })
+            : doc.heightOfString(text, { width: innerWidth, lineGap, lineBreak: !isNowrap(cellStyles) });
       rowHeight = Math.max(rowHeight, h + padT + padB);
       measureCol += colspan;
     }
@@ -528,8 +565,12 @@ async function renderTable(node, ctx, tableStyles = {}) {
 
       if (!measureOnly) {
         const innerWidth = Math.max(1, spanWidth - padL - padR);
+        const normalized = normalizeCellRuns(runs, cellStyles);
+        const cellHasEmoji = !!doc._emoji && !hasBlockCellContent(cell) && normalized.some((r) => r.isEmoji);
         if (hasBlockCellContent(cell)) {
           await renderBlockCell(cell, ctx, x + padL, y + padT, innerWidth, layout.marginBottom);
+        } else if (cellHasEmoji) {
+          drawEmojiCell(ctx, normalized, cellStyles, isHeader, x + padL, y + padT, innerWidth, align, lineGap, cell.tag);
         } else if (renderPlainText) {
           renderCellRuns(doc, normalizeCellRuns(runs, cellStyles), {
             x: x + padL,

@@ -18,6 +18,10 @@ const { makePdf } = require('./obj-pdf');
  * @param {{top?: number, right?: number, bottom?: number, left?: number}} [options.margins]
  * @param {number} [options.svgScale]
  * @param {number} [options.svgDpi]
+ * @param {string} [options.emojiFont] Path to a color-emoji font (sbix or COLRv0) for native color emoji.
+ * @param {boolean} [options.autoResolveEmojiFont] Use a known system emoji font (Apple/Segoe) when no emojiFont is given. Default true.
+ * @param {boolean} [options.autoDownloadEmojiFont] Opt-in: download an open Twemoji (COLRv0) font when none is available locally. Default false.
+ * @param {string} [options.emojiFontCacheDir] Override the cache dir for auto-downloaded emoji fonts.
  * @param {Object<string, string|{regular?: string, bold?: string, italic?: string, boldItalic?: string}>} [options.fonts]
  * @returns {Promise<Buffer>}
  */
@@ -49,6 +53,10 @@ async function renderPdfFromHtml(html, options = {}) {
     margins: options.margins,
     svgScale: options.svgScale,
     svgDpi: options.svgDpi,
+    emojiFont: options.emojiFont,
+    autoResolveEmojiFont: options.autoResolveEmojiFont,
+    autoDownloadEmojiFont: options.autoDownloadEmojiFont,
+    emojiFontCacheDir: options.emojiFontCacheDir,
   });
   return pdfBuffer;
 }

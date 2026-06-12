@@ -266,8 +266,19 @@ function renderInlineRuns(runs, ctx, { baseStyles, align, lineGap, tag }) {
     const spaces = (run.text || '').match(/ /g) || [];
     const text = run.text || '';
     selectFontForInline(doc, s, !!run.bold, !!run.italic, size, text);
-    const textWidth = doc.widthOfString(text, { characterSpacing: letterSpacing }) + wordSpacing * spaces.length;
-    const measuredTextHeight = doc.heightOfString(text, { lineGap: 0 });
+    // Emoji runs draw a Type 3 color glyph; width comes from the emoji font's
+    // advance, baseline from the surrounding text font's ascender.
+    const emojiInfo = run.isEmoji && doc._emoji ? doc._emoji.lookup(run.grapheme) : null;
+    const emojiAscender = emojiInfo ? doc._font.ascender : 0;
+    // An emoji run's text is normally just the grapheme, but upstream whitespace
+    // normalization (e.g. table cells) can attach surrounding spaces. Account for
+    // them so the emoji keeps its spacing from neighbouring words.
+    const emojiLeadW = emojiInfo ? (/^\s+/.test(text) ? doc.widthOfString(' ') : 0) : 0;
+    const emojiTrailW = emojiInfo && /\s+$/.test(text) ? doc.widthOfString(' ') : 0;
+    const textWidth = emojiInfo
+      ? doc._emoji.advanceWidth(emojiInfo, size) + emojiLeadW + emojiTrailW
+      : doc.widthOfString(text, { characterSpacing: letterSpacing }) + wordSpacing * spaces.length;
+    const measuredTextHeight = emojiInfo ? size : doc.heightOfString(text, { lineGap: 0 });
     const textHeight = measuredTextHeight;
     const runLineHeight = lineHeightValue(s, size, tag);
     const contentH = runLineHeight;
@@ -312,6 +323,9 @@ function renderInlineRuns(runs, ctx, { baseStyles, align, lineGap, tag }) {
       boxW,
       boxH,
       textHeight,
+      emojiInfo,
+      emojiAscender,
+      emojiLeadW,
     });
     current.width += boxW;
     current.height = Math.max(current.height, boxH);
@@ -370,11 +384,15 @@ function renderInlineRuns(runs, ctx, { baseStyles, align, lineGap, tag }) {
           ? Math.max(0, (item.boxH - item.padT - item.padB - item.border * 2 - item.textHeight) / 2)
           : 0;
         const textY = y + yOffset + item.border + item.padT + inlineAdjust;
-        const linkOpts = getRunLinkTextOptions(item.run, {
-          enableInternalAnchors: ctx?.options?.enableInternalAnchors,
-        });
-        selectFontForInline(doc, item.styles, !!item.run.bold, !!item.run.italic, item.size, item.run.text);
-        doc.text(item.run.text || '', x + item.border + item.padL, textY, { lineGap: 0, ...linkOpts });
+        if (item.emojiInfo) {
+          doc._emoji.draw(item.emojiInfo, x + item.border + item.padL + (item.emojiLeadW || 0), textY, item.size, item.emojiAscender);
+        } else {
+          const linkOpts = getRunLinkTextOptions(item.run, {
+            enableInternalAnchors: ctx?.options?.enableInternalAnchors,
+          });
+          selectFontForInline(doc, item.styles, !!item.run.bold, !!item.run.italic, item.size, item.run.text);
+          doc.text(item.run.text || '', x + item.border + item.padL, textY, { lineGap: 0, ...linkOpts });
+        }
       }
 
       x += item.boxW;
@@ -597,7 +615,18 @@ async function renderNode(node, ctx) {
         doc.x = blockX + paddingLeft;
         doc.y = startY + paddingTop;
         const hasLinks = runs.some((r) => r.href);
-        if (!hasLinks && (align !== 'left' || runs.length > 1)) {
+        const bqHasEmoji = doc._emoji && runs.some((r) => r.isEmoji);
+        if (bqHasEmoji) {
+          renderInlineRunsAt(runs, ctx, {
+            baseStyles: styles,
+            align,
+            lineGap: gap,
+            tag,
+            x: blockX + paddingLeft,
+            y: startY + paddingTop,
+            width: availableWidth,
+          });
+        } else if (!hasLinks && (align !== 'left' || runs.length > 1)) {
           selectFontForInline(doc, styles, false, false, size, plain);
           doc.fillColor(color).text(plain, {
             width: availableWidth,
@@ -708,13 +737,28 @@ async function renderNode(node, ctx) {
       borderBottomStyle === 'none' || borderBottomStyle === 'hidden' || !borderBottomPaint ? 0 : borderBottomWidth;
 
     selectFontForInline(doc, styles, true, false, size, text);
-    const h = doc.heightOfString(text, {
-      width: layout.contentWidth(),
-      align,
-      lineGap: gap,
-      characterSpacing: letterSpacing,
-      wordSpacing,
-    });
+    // Emoji in a heading must go through the manual line-breaker; force bold on
+    // the non-emoji runs to preserve the heading's default weight.
+    const headingHasEmoji = doc._emoji && runs.some((r) => r.isEmoji);
+    const headingRuns = headingHasEmoji ? runs.map((r) => (r.isEmoji ? r : { ...r, bold: true })) : runs;
+    const h = headingHasEmoji
+      ? renderInlineRunsAt(headingRuns, ctx, {
+          baseStyles: styles,
+          align,
+          lineGap: gap,
+          tag,
+          x: layout.x,
+          y: layout.y,
+          width: layout.contentWidth(),
+          measureOnly: true,
+        })
+      : doc.heightOfString(text, {
+          width: layout.contentWidth(),
+          align,
+          lineGap: gap,
+          characterSpacing: letterSpacing,
+          wordSpacing,
+        });
 
     const totalHeight = paddingTop + h + paddingBottom + borderBottom;
     layout.ensureSpace(totalHeight);
@@ -726,22 +770,34 @@ async function renderNode(node, ctx) {
       doc.fillColor(color);
       doc.x = layout.x;
       doc.y = textY;
-      for (const run of runs) {
-        const s = { ...styles, ...(run.styles || {}) };
-        selectFontForInline(doc, s, true, !!run.italic, null, run.text);
-        const linkOpts = getRunLinkTextOptions(run, {
-          enableInternalAnchors: ctx?.options?.enableInternalAnchors,
-        });
-        doc.fillColor(styleColor(s, 'color', color)).text(run.text, {
-          width: layout.contentWidth(),
+      if (headingHasEmoji) {
+        renderInlineRunsAt(headingRuns, ctx, {
+          baseStyles: styles,
           align,
           lineGap: gap,
-          continued: true,
-          underline: !!run.underline,
-          ...linkOpts,
+          tag,
+          x: layout.x,
+          y: textY,
+          width: layout.contentWidth(),
         });
+      } else {
+        for (const run of runs) {
+          const s = { ...styles, ...(run.styles || {}) };
+          selectFontForInline(doc, s, true, !!run.italic, null, run.text);
+          const linkOpts = getRunLinkTextOptions(run, {
+            enableInternalAnchors: ctx?.options?.enableInternalAnchors,
+          });
+          doc.fillColor(styleColor(s, 'color', color)).text(run.text, {
+            width: layout.contentWidth(),
+            align,
+            lineGap: gap,
+            continued: true,
+            underline: !!run.underline,
+            ...linkOpts,
+          });
+        }
+        doc.text('', { continued: false });
       }
-      doc.text('', { continued: false });
     }
 
     if (!measureOnly && borderBottom) {
@@ -785,7 +841,10 @@ async function renderNode(node, ctx) {
     selectFontForInline(doc, styles, false, false, size, plain);
     const availableWidth = layout.contentWidth() - paddingLeft - paddingRight;
     const hasLinks = runs.some((r) => r.href);
-    const renderRunsAsGroup = !hasLinks && (align !== 'left' || runs.length > 1);
+    const runsHaveEmoji = doc._emoji && runs.some((r) => r.isEmoji);
+    // Emoji must go through the manual line-breaker (Type 3 glyphs can't ride
+    // the continued-text auto-wrap path).
+    const renderRunsAsGroup = !hasLinks && (align !== 'left' || runs.length > 1 || runsHaveEmoji);
     let h = renderRunsAsGroup
       ? renderInlineRunsAt(runs, ctx, {
           baseStyles: styles,
@@ -1192,7 +1251,8 @@ async function renderNode(node, ctx) {
           const hasLineBreaks = plain.includes('\n');
           const allSameStyle = !runs.some((r) => r.bold || r.italic || r.href);
           const hasLinks = runs.some((r) => r.href);
-          const renderRunsAsGroup = !hasLinks && (align !== 'left' || runs.length > 1);
+          const runsHaveEmoji = doc._emoji && runs.some((r) => r.isEmoji);
+          const renderRunsAsGroup = !hasLinks && (align !== 'left' || runs.length > 1 || runsHaveEmoji);
           const h = renderRunsAsGroup
             ? renderInlineRunsAt(runs, ctx, {
                 baseStyles: styles,
@@ -1358,4 +1418,4 @@ async function renderNode(node, ctx) {
   applyPageBreakAfter(styles, ctx, node);
 }
 
-module.exports = { renderNode };
+module.exports = { renderNode, renderInlineRunsAt };
