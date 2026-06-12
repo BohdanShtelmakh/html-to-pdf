@@ -33,6 +33,8 @@ function tagDefaults(tag) {
       return { size: BASE_PT, mt: em(1), mb: em(1), lh: BODY_LH, bold: false };
     case 'figcaption':
       return { size: BASE_PT, mt: 0, mb: 0, lh: BODY_LH, bold: false };
+    case 'hr':
+      return { size: BASE_PT, mt: em(0.5), mb: em(0.5), lh: BODY_LH, bold: false };
     case 'div':
     case 'body':
     case 'root':

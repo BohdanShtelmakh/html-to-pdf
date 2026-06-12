@@ -526,6 +526,35 @@ async function renderNode(node, ctx) {
     return;
   }
 
+  if (tag === 'hr') {
+    // A void element (no children) reads as "inline-only" to the generic text
+    // path, so handle it before that branch. Draws a rule from the border
+    // styles (top margin already applied by newBlock); a bare <hr> defaults to a
+    // thin grey line, while `border: none` (no border-top) renders nothing.
+    const topStyle = String(styles['border-top-style'] || styles['border-style'] || '')
+      .trim()
+      .toLowerCase();
+    const suppressed = topStyle === 'none' || topStyle === 'hidden';
+    const explicitTop = styleNumber(styles, 'border-top-width', null);
+    const explicitAll = styleNumber(styles, 'border-width', null);
+    const lineW = explicitTop != null ? explicitTop : explicitAll != null ? explicitAll : parsePx('1px', 1);
+    const lineColor = styles['border-top-color'] != null
+      ? styleColor(styles, 'border-top-color', '#888888')
+      : styles['border-color'] != null
+        ? styleColor(styles, 'border-color', '#888888')
+        : '#888888';
+    if (!suppressed && lineW > 0) {
+      layout.ensureSpace(lineW);
+      if (!measureOnly) {
+        doc.save().rect(layout.x, layout.y, layout.contentWidth(), lineW).fill(lineColor).restore();
+      }
+      layout.cursorToNextLine(lineW);
+    }
+    finishBlock();
+    applyPageBreakAfter(styles, ctx, node);
+    return;
+  }
+
   if (tag === 'ul' || tag === 'ol') {
     await renderList(node, ctx, tag === 'ol');
     finishBlock();
