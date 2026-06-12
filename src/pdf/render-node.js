@@ -845,7 +845,11 @@ async function renderNode(node, ctx) {
     return;
   }
 
-  const inlineOnlyNoBr = isInlineOnly(node) && !containsBr(node) && display !== 'flex' && display !== 'grid';
+  // A div/figure/header with an explicit width must go through the block path
+  // (which sizes + positions the box) rather than the simple inline-text path.
+  const hasExplicitWidth = styles.width != null && String(styles.width).trim().toLowerCase() !== 'auto';
+  const inlineOnlyNoBr =
+    isInlineOnly(node) && !containsBr(node) && display !== 'flex' && display !== 'grid' && !hasExplicitWidth;
   if (tag === 'p' || tag === 'span' || tag === 'figcaption' || inlineOnlyNoBr) {
     const size = styleNumber(styles, 'font-size', BASE_PT);
     const gap = lineGapFor(size, styles, tag);
@@ -1026,8 +1030,29 @@ async function renderNode(node, ctx) {
 
     layout.ensureSpace(Math.max(paddingTop + paddingBottom + borderTop.width + borderBottom.width, minimumOuterHeight));
     const startY = layout.y;
-    const blockX = layout.x;
-    const blockWidth = layout.contentWidth();
+    const availWidth = layout.contentWidth();
+    // Honour an explicit width (px/%/mm/...) and horizontal margin auto, so e.g.
+    // `width: 200mm; margin: 0 auto` produces a centred fixed-width block instead
+    // of always filling the content area. Width-less blocks keep prior behaviour.
+    const explicitWidth = styleNumber(styles, 'width', null, { percentBase: availWidth });
+    let blockX = layout.x;
+    let blockWidth = availWidth;
+    if (explicitWidth != null && explicitWidth >= 0) {
+      const outerWidth =
+        boxSizing === 'border-box'
+          ? explicitWidth
+          : explicitWidth + borderLeft.width + borderRight.width + paddingLeft + paddingRight;
+      blockWidth = Math.min(availWidth, Math.max(0, outerWidth));
+      const free = Math.max(0, availWidth - blockWidth);
+      const mlAuto = String(styles['margin-left'] || '').trim().toLowerCase() === 'auto';
+      const mrAuto = String(styles['margin-right'] || '').trim().toLowerCase() === 'auto';
+      if (mlAuto && mrAuto) blockX = layout.x + free / 2;
+      else if (mlAuto) blockX = layout.x + free;
+      else if (styles['margin-left'] != null) {
+        const ml = styleNumber(styles, 'margin-left', 0, { percentBase: availWidth });
+        blockX = layout.x + Math.max(0, Math.min(ml, free));
+      }
+    }
     const contentX = blockX + borderLeft.width + paddingLeft;
     const contentWidth = Math.max(0, blockWidth - borderLeft.width - borderRight.width - paddingLeft - paddingRight);
     const contentStartY = startY + borderTop.width + paddingTop;
