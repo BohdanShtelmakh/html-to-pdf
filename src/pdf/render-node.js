@@ -475,7 +475,7 @@ async function renderNode(node, ctx) {
       margin: styles.margin || '',
     });
   }
-  const computed = computedMargins(styles, tag);
+  const computed = computedMargins(styles, tag, { percentBase: layout.contentWidth() });
   const isRoot = node.type === 'root' || tag === 'body';
   const mt = isRoot ? 0 : computed.mt;
   const mb = isRoot ? 0 : computed.mb;
@@ -858,11 +858,12 @@ async function renderNode(node, ctx) {
     const plain = runs.map((r) => r.text).join('');
     const letterSpacing = styleNumber(styles, 'letter-spacing', 0, { baseSize: size });
     const wordSpacing = styleNumber(styles, 'word-spacing', 0, { baseSize: size });
-    const padding = styleNumber(styles, 'padding', 0);
-    const paddingTop = styleNumber(styles, 'padding-top', padding);
-    const paddingBottom = styleNumber(styles, 'padding-bottom', padding);
-    const paddingLeft = styleNumber(styles, 'padding-left', padding);
-    const paddingRight = styleNumber(styles, 'padding-right', padding);
+    const pctW = layout.contentWidth();
+    const padding = styleNumber(styles, 'padding', 0, { percentBase: pctW });
+    const paddingTop = styleNumber(styles, 'padding-top', padding, { percentBase: pctW });
+    const paddingBottom = styleNumber(styles, 'padding-bottom', padding, { percentBase: pctW });
+    const paddingLeft = styleNumber(styles, 'padding-left', padding, { percentBase: pctW });
+    const paddingRight = styleNumber(styles, 'padding-right', padding, { percentBase: pctW });
     const bg = styleColor(styles, 'background-color', null);
     const borderLeftWidth = styleNumber(styles, 'border-left-width', 0);
     const borderLeftColor = styleColor(styles, 'border-left-color', '#333333');
@@ -970,11 +971,13 @@ async function renderNode(node, ctx) {
   }
 
   if (tag === 'div' || tag === 'figure' || tag === 'header') {
-    const padding = styleNumber(styles, 'padding', 0);
-    const paddingTop = styleNumber(styles, 'padding-top', padding);
-    const paddingBottom = styleNumber(styles, 'padding-bottom', padding);
-    const paddingLeft = styleNumber(styles, 'padding-left', padding);
-    const paddingRight = styleNumber(styles, 'padding-right', padding);
+    // CSS resolves percentage padding against the containing block's width.
+    const pctW = layout.contentWidth();
+    const padding = styleNumber(styles, 'padding', 0, { percentBase: pctW });
+    const paddingTop = styleNumber(styles, 'padding-top', padding, { percentBase: pctW });
+    const paddingBottom = styleNumber(styles, 'padding-bottom', padding, { percentBase: pctW });
+    const paddingLeft = styleNumber(styles, 'padding-left', padding, { percentBase: pctW });
+    const paddingRight = styleNumber(styles, 'padding-right', padding, { percentBase: pctW });
     const bg = styleColor(styles, 'background-color', null);
     const borderWidth = styleNumber(styles, 'border-width', 0);
     const borderColor = styleColor(styles, 'border-color', '#333333');

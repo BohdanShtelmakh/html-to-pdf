@@ -57,13 +57,13 @@ function defaultMarginsFor(tag) {
  * Parse a CSS margin/padding shorthand value into all four sides.
  * Also applies individual side overrides (e.g. margin-top) from styles if provided.
  */
-function parseMarginBox(styles, fallback = 0, { base = BASE_PT } = {}) {
+function parseMarginBox(styles, fallback = 0, { base = BASE_PT, percentBase = null } = {}) {
   const out = { top: fallback, right: fallback, bottom: fallback, left: fallback };
   if (!styles) return out;
 
   const val = styles.margin || styles['margin'];
   const parts = typeof val === 'string' ? val.trim().split(/\s+/).filter(Boolean) : [];
-  const toPx = (v) => parsePxWithOptions(v, fallback, { base });
+  const toPx = (v) => parsePxWithOptions(v, fallback, { base, percentBase });
 
   if (parts.length === 1) {
     const m = toPx(parts[0]);
@@ -96,21 +96,23 @@ function defaultLineHeightFor(tag) {
   return tagDefaults(tag).lh;
 }
 
-function computedMargins(styles, tag) {
+function computedMargins(styles, tag, { percentBase = null } = {}) {
   const fontSize = styleNumber(styles, 'font-size', defaultFontSizeFor(tag));
   const scale = fontSize / BASE_PT;
   const d = defaultMarginsFor(tag);
   const defaultTop = d.mt * scale;
   const defaultBottom = d.mb * scale;
-  const box = parseMarginBox(styles, 0, { base: fontSize });
+  // CSS resolves percentage margins (vertical included) against the containing
+  // block's width.
+  const box = parseMarginBox(styles, 0, { base: fontSize, percentBase });
   const hasShorthand = styles.margin != null;
   const mt =
     styles['margin-top'] != null
-      ? parsePxWithOptions(styles['margin-top'], defaultTop, { base: fontSize })
+      ? parsePxWithOptions(styles['margin-top'], defaultTop, { base: fontSize, percentBase })
       : hasShorthand ? box.top : defaultTop;
   const mb =
     styles['margin-bottom'] != null
-      ? parsePxWithOptions(styles['margin-bottom'], defaultBottom, { base: fontSize })
+      ? parsePxWithOptions(styles['margin-bottom'], defaultBottom, { base: fontSize, percentBase })
       : hasShorthand ? box.bottom : defaultBottom;
   return { mt, mb };
 }
