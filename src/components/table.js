@@ -396,6 +396,159 @@ function drawEmojiCell(ctx, runs, cellStyles, isHeader, x, y, innerWidth, align,
   });
 }
 
+function rowCells(row) {
+  return (row.children || []).filter((c) => c.type === 'element' && (c.tag === 'td' || c.tag === 'th'));
+}
+
+// Build a grid-occupancy model. For each row, returns the cells placed in that
+// row together with the column they start at, accounting for rowspan cells that
+// extend down from earlier rows. `cols` is the total column count.
+function buildGrid(rows) {
+  const placements = rows.map(() => []);
+  // occupancy[row] is a Set of column indices already claimed by a span above.
+  const occupancy = rows.map(() => new Set());
+  let cols = 0;
+
+  rows.forEach((row, r) => {
+    let col = 0;
+    for (const cell of rowCells(row)) {
+      // Advance past columns claimed by spanning cells from previous rows.
+      while (occupancy[r].has(col)) col++;
+      const colspan = Math.max(1, parseInt(cell.attrs?.colspan, 10) || 1);
+      const rowspan = Math.max(1, parseInt(cell.attrs?.rowspan, 10) || 1);
+      placements[r].push({ cell, colStart: col, colspan, rowspan });
+      // Mark the rectangle this cell occupies in all subsequent spanned rows.
+      for (let dr = 1; dr < rowspan && r + dr < rows.length; dr++) {
+        for (let dc = 0; dc < colspan; dc++) occupancy[r + dr].add(col + dc);
+      }
+      col += colspan;
+      cols = Math.max(cols, col);
+    }
+  });
+
+  return { placements, cols: cols || 1 };
+}
+
+// Measure the natural content height of a single cell laid out at `spanWidth`.
+async function measureCellHeight(cell, ctx, spanWidth, cellPadding) {
+  const { doc, layout } = ctx;
+  const cellStyles = cell.styles || {};
+  const text = cellPlainText(cell, cellStyles) || '';
+  const isHeader = cell.tag === 'th';
+  const fs = styleNumber(cellStyles, 'font-size', isHeader ? 12.5 : 12);
+  const lh = lineHeightValue(cellStyles, fs, cell.tag || 'td');
+  const lineGap = Math.max(0, lh - fs);
+  const padT = styleNumber(cellStyles, 'padding-top', cellPadding);
+  const padB = styleNumber(cellStyles, 'padding-bottom', cellPadding);
+  const padL = styleNumber(cellStyles, 'padding-left', cellPadding);
+  const padR = styleNumber(cellStyles, 'padding-right', cellPadding);
+  selectFontForInline(doc, cellStyles, isHeader, false, fs, text);
+  const innerWidth = Math.max(1, spanWidth - padL - padR);
+  const align = textAlign(cellStyles || {});
+  const rawText = gatherPlainText(cell) || '';
+  const normalizedRuns = normalizeCellRuns(inlineRuns(cell, cellStyles), cellStyles);
+  const renderPlainText = text !== rawText || text.includes('\n') || isNowrap(cellStyles);
+  const cellHasEmoji = !!doc._emoji && !hasBlockCellContent(cell) && normalizedRuns.some((r) => r.isEmoji);
+  const h = hasBlockCellContent(cell)
+    ? await measureBlockCell(cell, ctx, 0, innerWidth, 0, layout.marginBottom)
+    : cellHasEmoji
+      ? measureEmojiCell(ctx, normalizedRuns, cellStyles, isHeader, innerWidth, align, lineGap, cell.tag)
+      : renderPlainText
+        ? measureCellRuns(doc, normalizedRuns, {
+            width: innerWidth,
+            align,
+            lineGap,
+            isHeader,
+            nowrap: isNowrap(cellStyles),
+          })
+        : doc.heightOfString(text, { width: innerWidth, lineGap, lineBreak: !isNowrap(cellStyles) });
+  return h + padT + padB;
+}
+
+// Draw a single cell (background, border, content) at the given rectangle.
+async function drawCell(cell, ctx, { x, y, spanWidth, spanHeight, rowStyles, tableStyles, cellPadding }) {
+  const { doc, layout } = ctx;
+  const cellStyles = cell.styles || {};
+  const bg = resolveBackground(cellStyles, rowStyles, tableStyles);
+  const { borderWidth, borderColor, borderBottomWidth, borderBottomColor, borderBottomStyle } = resolveBorder(
+    cellStyles,
+    rowStyles,
+    tableStyles
+  );
+  if (bg) {
+    doc.save().rect(x, y, spanWidth, spanHeight).fill(bg).restore();
+  }
+  if (borderWidth > 0) {
+    doc
+      .save()
+      .lineWidth(borderWidth)
+      .strokeColor(borderColor || '#000')
+      .rect(x, y, spanWidth, spanHeight)
+      .stroke()
+      .restore();
+  } else if (borderBottomWidth > 0) {
+    doc.save().lineWidth(borderBottomWidth).strokeColor(borderBottomColor || '#000');
+    if (borderBottomStyle === 'dashed') {
+      doc.dash(borderBottomWidth * 2, { space: borderBottomWidth * 2 });
+    } else if (borderBottomStyle === 'dotted') {
+      doc.dash(borderBottomWidth, { space: borderBottomWidth });
+    }
+    const lineY = y + spanHeight - borderBottomWidth / 2;
+    doc.moveTo(x, lineY).lineTo(x + spanWidth, lineY).stroke();
+    doc.undash().restore();
+  }
+
+  const isHeader = cell.tag === 'th';
+  const fs = styleNumber(cellStyles, 'font-size', isHeader ? 12.5 : 12);
+  const lh = lineHeightValue(cellStyles, fs, cell.tag || 'td');
+  const lineGap = Math.max(0, lh - fs);
+  const runs = inlineRuns(cell, cellStyles);
+  const text = cellPlainText(cell, cellStyles) || '';
+  const rawText = gatherPlainText(cell) || '';
+  const renderPlainText = text !== rawText || text.includes('\n') || isNowrap(cellStyles);
+  const align = textAlign(cellStyles || {});
+  const padT = styleNumber(cellStyles, 'padding-top', cellPadding);
+  const padL = styleNumber(cellStyles, 'padding-left', cellPadding);
+  const padR = styleNumber(cellStyles, 'padding-right', cellPadding);
+
+  const innerWidth = Math.max(1, spanWidth - padL - padR);
+  const normalized = normalizeCellRuns(runs, cellStyles);
+  const cellHasEmoji = !!doc._emoji && !hasBlockCellContent(cell) && normalized.some((r) => r.isEmoji);
+  if (hasBlockCellContent(cell)) {
+    await renderBlockCell(cell, ctx, x + padL, y + padT, innerWidth, layout.marginBottom);
+  } else if (cellHasEmoji) {
+    drawEmojiCell(ctx, normalized, cellStyles, isHeader, x + padL, y + padT, innerWidth, align, lineGap, cell.tag);
+  } else if (renderPlainText) {
+    renderCellRuns(doc, normalized, {
+      x: x + padL,
+      y: y + padT,
+      width: innerWidth,
+      align,
+      lineGap,
+      isHeader,
+      nowrap: isNowrap(cellStyles),
+      ctx,
+    });
+  } else {
+    doc.x = x + padL;
+    doc.y = y + padT;
+    for (const run of runs) {
+      selectFontForInline(doc, run.styles || {}, isHeader || !!run.bold, !!run.italic, null, run.text);
+      const linkOpts = getRunLinkTextOptions(run, {
+        enableInternalAnchors: ctx?.options?.enableInternalAnchors,
+      });
+      doc.fillColor(styleColor(run.styles || {}, 'color', '#000')).text(run.text, {
+        width: innerWidth,
+        align,
+        lineGap,
+        continued: true,
+        ...linkOpts,
+      });
+    }
+    doc.text('', { continued: false });
+  }
+}
+
 async function renderTable(node, ctx, tableStyles = {}) {
   const { doc, layout } = ctx;
   const measureOnly = !!ctx?.measureOnly;
@@ -411,13 +564,8 @@ async function renderTable(node, ctx, tableStyles = {}) {
   const rows = [...headRows, ...bodyRows, ...footRows];
   if (!rows.length) return;
 
-  let cols = 0;
-  for (const row of rows) {
-    const cells = (row.children || []).filter((c) => c.type === 'element' && (c.tag === 'td' || c.tag === 'th'));
-    const spanSum = cells.reduce((sum, c) => sum + (parseInt(c.attrs?.colspan, 10) || 1), 0);
-    cols = Math.max(cols, spanSum);
-  }
-  cols = cols || 1;
+  const { placements, cols } = buildGrid(rows);
+  const headRowCount = headRows.length;
 
   const cellPadding = styleNumber(tableStyles, 'padding', 6);
   const contentWidth = layout.contentWidth();
@@ -426,17 +574,12 @@ async function renderTable(node, ctx, tableStyles = {}) {
   const minWidths = Array(cols).fill(0);
   const fixedWidths = Array(cols).fill(null);
 
-  for (const row of rows) {
-    let colIndex = 0;
-    const cells = (row.children || []).filter((c) => c.type === 'element' && (c.tag === 'td' || c.tag === 'th'));
-    for (const cell of cells) {
-      const colspan = parseInt(cell.attrs?.colspan, 10) || 1;
+  for (let r = 0; r < rows.length; r++) {
+    for (const { cell, colStart, colspan } of placements[r]) {
       const cellStyles = cell.styles || {};
       const text = cellPlainText(cell, cellStyles) || '';
       const isHeader = cell.tag === 'th';
       const fs = styleNumber(cellStyles, 'font-size', isHeader ? 12.5 : 12);
-      const lh = lineHeightValue(cellStyles, fs, cell.tag || 'td');
-      const lineGap = Math.max(0, lh - fs);
       const padL = styleNumber(cellStyles, 'padding-left', cellPadding);
       const padR = styleNumber(cellStyles, 'padding-right', cellPadding);
       const explicitWidth = cellExplicitWidth(cell, contentWidth, fs);
@@ -453,158 +596,112 @@ async function renderTable(node, ctx, tableStyles = {}) {
       const target = explicitWidth != null ? explicitWidth : needed;
       const perCol = target / colspan;
       const minPerCol = minNeeded / colspan;
-      for (let i = 0; i < colspan && colIndex + i < cols; i++) {
-        preferredWidths[colIndex + i] = Math.max(preferredWidths[colIndex + i], perCol);
-        minWidths[colIndex + i] = Math.max(minWidths[colIndex + i], minPerCol);
+      for (let i = 0; i < colspan && colStart + i < cols; i++) {
+        preferredWidths[colStart + i] = Math.max(preferredWidths[colStart + i], perCol);
+        minWidths[colStart + i] = Math.max(minWidths[colStart + i], minPerCol);
         if (explicitWidth != null) {
-          fixedWidths[colIndex + i] = Math.max(fixedWidths[colIndex + i] || 0, perCol);
+          fixedWidths[colStart + i] = Math.max(fixedWidths[colStart + i] || 0, perCol);
         }
       }
-      colIndex += colspan;
     }
   }
 
   const colWidths = distributeColumnWidths(preferredWidths, minWidths, contentWidth, fixedWidths);
+  const spanWidthOf = (colStart, colspan) =>
+    colWidths.slice(colStart, colStart + colspan).reduce((a, b) => a + b, 0);
 
-  for (const row of rows) {
-    let rowHeight = 0;
-    const cells = (row.children || []).filter((c) => c.type === 'element' && (c.tag === 'td' || c.tag === 'th'));
-    const rowStyles = row.styles || {};
+  // Rows are packed flush (the original layout advanced by exactly rowHeight);
+  // only ensureSpace keeps a 2px safety margin.
+  const ROW_GAP = 0;
+  const ENSURE_PAD = 2;
 
-    let measureCol = 0;
-    for (const cell of cells) {
-      const colspan = parseInt(cell.attrs?.colspan, 10) || 1;
-      const spanWidth = colWidths.slice(measureCol, measureCol + colspan).reduce((a, b) => a + b, 0);
-      const cellStyles = cell.styles || {};
-      const text = cellPlainText(cell, cellStyles) || '';
-      const isHeader = cell.tag === 'th';
-      const fs = styleNumber(cellStyles, 'font-size', isHeader ? 12.5 : 12);
-      const lh = lineHeightValue(cellStyles, fs, cell.tag || 'td');
-      const lineGap = Math.max(0, lh - fs);
-      const padT = styleNumber(cellStyles, 'padding-top', cellPadding);
-      const padB = styleNumber(cellStyles, 'padding-bottom', cellPadding);
-      const padL = styleNumber(cellStyles, 'padding-left', cellPadding);
-      const padR = styleNumber(cellStyles, 'padding-right', cellPadding);
-      selectFontForInline(doc, cellStyles, isHeader, false, fs, text);
-      const innerWidth = Math.max(1, spanWidth - padL - padR);
-      const align = textAlign(cellStyles || {});
-      const rawText = gatherPlainText(cell) || '';
-      const normalizedRuns = normalizeCellRuns(inlineRuns(cell, cellStyles), cellStyles);
-      const renderPlainText = text !== rawText || text.includes('\n') || isNowrap(cellStyles);
-      const cellHasEmoji = !!doc._emoji && !hasBlockCellContent(cell) && normalizedRuns.some((r) => r.isEmoji);
-      const h = hasBlockCellContent(cell)
-        ? await measureBlockCell(cell, ctx, 0, innerWidth, 0, layout.marginBottom)
-        : cellHasEmoji
-          ? measureEmojiCell(ctx, normalizedRuns, cellStyles, isHeader, innerWidth, align, lineGap, cell.tag)
-          : renderPlainText
-            ? measureCellRuns(doc, normalizedRuns, {
-                width: innerWidth,
-                align,
-                lineGap,
-                isHeader,
-                nowrap: isNowrap(cellStyles),
-              })
-            : doc.heightOfString(text, { width: innerWidth, lineGap, lineBreak: !isNowrap(cellStyles) });
-      rowHeight = Math.max(rowHeight, h + padT + padB);
-      measureCol += colspan;
+  // Pass 1: base row heights from non-spanning (rowspan === 1) cells.
+  const rowHeights = Array(rows.length).fill(0);
+  for (let r = 0; r < rows.length; r++) {
+    for (const p of placements[r]) {
+      if (p.rowspan > 1) continue;
+      const h = await measureCellHeight(p.cell, ctx, spanWidthOf(p.colStart, p.colspan), cellPadding);
+      rowHeights[r] = Math.max(rowHeights[r], h);
     }
+  }
 
-    layout.ensureSpace(rowHeight + 2);
+  // Pass 2: ensure spanning cells fit. If a rowspan cell needs more height than
+  // its covered rows currently provide, grow the last spanned row.
+  for (let r = 0; r < rows.length; r++) {
+    for (const p of placements[r]) {
+      if (p.rowspan <= 1) continue;
+      const lastRow = Math.min(rows.length - 1, r + p.rowspan - 1);
+      const span = lastRow - r; // number of inter-row gaps covered
+      let covered = span * ROW_GAP;
+      for (let rr = r; rr <= lastRow; rr++) covered += rowHeights[rr];
+      const needed = await measureCellHeight(p.cell, ctx, spanWidthOf(p.colStart, p.colspan), cellPadding);
+      if (needed > covered) rowHeights[lastRow] += needed - covered;
+    }
+  }
 
-    let drawCol = 0;
-    for (const cell of cells) {
-      const colspan = parseInt(cell.attrs?.colspan, 10) || 1;
-      const spanWidth = colWidths.slice(drawCol, drawCol + colspan).reduce((a, b) => a + b, 0);
-      const x = layout.x + colWidths.slice(0, drawCol).reduce((a, b) => a + b, 0);
+  if (measureOnly) {
+    for (let r = 0; r < rows.length; r++) layout.cursorToNextLine(rowHeights[r]);
+    return;
+  }
+
+  // Draw the header rows starting at the current layout cursor. Returns the
+  // total height consumed so the caller can advance past them.
+  async function drawHeaderRows() {
+    for (let r = 0; r < headRowCount; r++) {
+      const rowStyles = rows[r].styles || {};
+      const rowH = rowHeights[r];
       const y = layout.y;
-      const cellStyles = cell.styles || {};
-      const bg = resolveBackground(cellStyles, rowStyles, tableStyles);
-      const { borderWidth, borderColor, borderBottomWidth, borderBottomColor, borderBottomStyle } = resolveBorder(
-        cellStyles,
-        rowStyles,
-        tableStyles
-      );
-      if (!measureOnly) {
-        if (bg) {
-          doc.save().rect(x, y, spanWidth, rowHeight).fill(bg).restore();
-        }
-        if (borderWidth > 0) {
-          doc
-            .save()
-            .lineWidth(borderWidth)
-            .strokeColor(borderColor || '#000')
-            .rect(x, y, spanWidth, rowHeight)
-            .stroke()
-            .restore();
-        } else if (borderBottomWidth > 0) {
-          doc.save().lineWidth(borderBottomWidth).strokeColor(borderBottomColor || '#000');
-          if (borderBottomStyle === 'dashed') {
-            doc.dash(borderBottomWidth * 2, { space: borderBottomWidth * 2 });
-          } else if (borderBottomStyle === 'dotted') {
-            doc.dash(borderBottomWidth, { space: borderBottomWidth });
-          }
-          const lineY = y + rowHeight - borderBottomWidth / 2;
-          doc.moveTo(x, lineY).lineTo(x + spanWidth, lineY).stroke();
-          doc.undash().restore();
-        }
+      for (const p of placements[r]) {
+        const spanWidth = spanWidthOf(p.colStart, p.colspan);
+        const x = layout.x + colWidths.slice(0, p.colStart).reduce((a, b) => a + b, 0);
+        const lastRow = Math.min(rows.length - 1, r + p.rowspan - 1);
+        let spanHeight = (lastRow - r) * ROW_GAP;
+        for (let rr = r; rr <= lastRow; rr++) spanHeight += rowHeights[rr];
+        await drawCell(p.cell, ctx, { x, y, spanWidth, spanHeight, rowStyles, tableStyles, cellPadding });
       }
+      layout.cursorToNextLine(rowH);
+    }
+  }
 
-      const isHeader = cell.tag === 'th';
-      const fs = styleNumber(cell.styles || {}, 'font-size', isHeader ? 12.5 : 12);
-      const lh = lineHeightValue(cell.styles || {}, fs, cell.tag || 'td');
-      const lineGap = Math.max(0, lh - fs);
-      const runs = inlineRuns(cell, cellStyles);
-      const text = cellPlainText(cell, cellStyles) || '';
-      const rawText = gatherPlainText(cell) || '';
-      const renderPlainText = text !== rawText || text.includes('\n') || isNowrap(cellStyles);
-      const align = textAlign(cellStyles || {});
-      const padT = styleNumber(cell.styles || {}, 'padding-top', cellPadding);
-      const padB = styleNumber(cell.styles || {}, 'padding-bottom', cellPadding);
-      const padL = styleNumber(cell.styles || {}, 'padding-left', cellPadding);
-      const padR = styleNumber(cell.styles || {}, 'padding-right', cellPadding);
+  for (let r = 0; r < rows.length; r++) {
+    const rowStyles = rows[r].styles || {};
+    const rowH = rowHeights[r];
 
-      if (!measureOnly) {
-        const innerWidth = Math.max(1, spanWidth - padL - padR);
-        const normalized = normalizeCellRuns(runs, cellStyles);
-        const cellHasEmoji = !!doc._emoji && !hasBlockCellContent(cell) && normalized.some((r) => r.isEmoji);
-        if (hasBlockCellContent(cell)) {
-          await renderBlockCell(cell, ctx, x + padL, y + padT, innerWidth, layout.marginBottom);
-        } else if (cellHasEmoji) {
-          drawEmojiCell(ctx, normalized, cellStyles, isHeader, x + padL, y + padT, innerWidth, align, lineGap, cell.tag);
-        } else if (renderPlainText) {
-          renderCellRuns(doc, normalizeCellRuns(runs, cellStyles), {
-            x: x + padL,
-            y: y + padT,
-            width: innerWidth,
-            align,
-            lineGap,
-            isHeader,
-            nowrap: isNowrap(cellStyles),
-            ctx,
-          });
-        } else {
-          doc.x = x + padL;
-          doc.y = y + padT;
-          for (const run of runs) {
-            selectFontForInline(doc, run.styles || {}, isHeader || !!run.bold, !!run.italic, null, run.text);
-            const linkOpts = getRunLinkTextOptions(run, {
-              enableInternalAnchors: ctx?.options?.enableInternalAnchors,
-            });
-            doc.fillColor(styleColor(run.styles || {}, 'color', '#000')).text(run.text, {
-              width: innerWidth,
-              align,
-              lineGap,
-              continued: true,
-              ...linkOpts,
-            });
-          }
-          doc.text('', { continued: false });
-        }
-      }
-      drawCol += colspan;
+    const pageBefore = doc.bufferedPageRange ? doc.bufferedPageRange().count : null;
+    const yBefore = layout.y;
+    layout.ensureSpace(rowH + ENSURE_PAD);
+    const brokeToNewPage = layout.y < yBefore || (pageBefore != null && doc.bufferedPageRange().count !== pageBefore);
+
+    // Repeat the header at the top of each continuation page (skip the header
+    // rows themselves and the very first page).
+    if (brokeToNewPage && r >= headRowCount && headRowCount > 0) {
+      await drawHeaderRows();
+      // After repeating the header the cursor may again be low on the page;
+      // make sure the upcoming row still fits.
+      layout.ensureSpace(rowH + ENSURE_PAD);
     }
 
-    layout.cursorToNextLine(rowHeight);
+    for (const p of placements[r]) {
+      const spanWidth = spanWidthOf(p.colStart, p.colspan);
+      const x = layout.x + colWidths.slice(0, p.colStart).reduce((a, b) => a + b, 0);
+      const y = layout.y;
+
+      // Compute the spanning height. If the span crosses a page break (a later
+      // covered row landed on a different page), clamp it to this row only so
+      // nothing overlaps onto the next page.
+      const lastRow = Math.min(rows.length - 1, r + p.rowspan - 1);
+      let spanHeight = rowH;
+      if (p.rowspan > 1) {
+        spanHeight = (lastRow - r) * ROW_GAP;
+        for (let rr = r; rr <= lastRow; rr++) spanHeight += rowHeights[rr];
+        const bottom = doc.page.height - layout.marginBottom;
+        if (y + spanHeight > bottom) spanHeight = rowH; // would cross a page edge
+      }
+
+      await drawCell(p.cell, ctx, { x, y, spanWidth, spanHeight, rowStyles, tableStyles, cellPadding });
+    }
+
+    layout.cursorToNextLine(rowH + ROW_GAP);
   }
 }
 
