@@ -152,7 +152,9 @@ async function makePdf(json, options = {}) {
     const resolvedEmoji = await resolveEmojiFont(options);
     const emojiRegistry = resolvedEmoji ? createEmojiRegistry(doc, resolvedEmoji) : null;
     if (emojiRegistry) {
-      for (const g of graphemes) await emojiRegistry.prepare(g);
+      // Decode all glyphs concurrently (PNG inflate for sbix is the cost); the
+      // registry allocates codes deterministically as each resolves.
+      await Promise.all(Array.from(graphemes, (g) => emojiRegistry.prepare(g)));
       if (emojiRegistry.glyphCache.size) doc._emoji = emojiRegistry;
     }
   }
