@@ -132,6 +132,8 @@ function inlineRuns(node, parentStyles = {}) {
     if (tag === 'b' || tag === 'strong') next.bold = true;
     if (tag === 'i' || tag === 'em') next.italic = true;
     if (tag === 'u') next.underline = true;
+    if (tag === 'sub') next.subscript = true;
+    if (tag === 'sup') next.superscript = true;
 
     const deco = textDecorations(styles);
     if (deco.underline) next.underline = true;

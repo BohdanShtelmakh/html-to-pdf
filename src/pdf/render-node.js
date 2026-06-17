@@ -265,7 +265,12 @@ function renderInlineRuns(runs, ctx, { baseStyles, align, lineGap, tag }) {
 
     const spaces = (run.text || '').match(/ /g) || [];
     const text = run.text || '';
-    selectFontForInline(doc, s, !!run.bold, !!run.italic, size, text);
+    // Subscript/superscript: smaller glyph drawn with a baseline shift, while the
+    // line metrics keep the parent size so the line height doesn't collapse.
+    const isSubSup = !!(run.subscript || run.superscript);
+    const glyphSize = isSubSup ? size * 0.75 : size;
+    const vShift = run.superscript ? -size * 0.33 : run.subscript ? size * 0.12 : 0;
+    selectFontForInline(doc, s, !!run.bold, !!run.italic, glyphSize, text);
     // Emoji runs draw a Type 3 color glyph; width comes from the emoji font's
     // advance, baseline from the surrounding text font's ascender.
     const emojiInfo = run.isEmoji && doc._emoji ? doc._emoji.lookup(run.grapheme) : null;
@@ -326,6 +331,8 @@ function renderInlineRuns(runs, ctx, { baseStyles, align, lineGap, tag }) {
       emojiInfo,
       emojiAscender,
       emojiLeadW,
+      glyphSize,
+      vShift,
     });
     current.width += boxW;
     current.height = Math.max(current.height, boxH);
@@ -390,8 +397,8 @@ function renderInlineRuns(runs, ctx, { baseStyles, align, lineGap, tag }) {
           const linkOpts = getRunLinkTextOptions(item.run, {
             enableInternalAnchors: ctx?.options?.enableInternalAnchors,
           });
-          selectFontForInline(doc, item.styles, !!item.run.bold, !!item.run.italic, item.size, item.run.text);
-          doc.text(item.run.text || '', x + item.border + item.padL, textY, { lineGap: 0, ...linkOpts });
+          selectFontForInline(doc, item.styles, !!item.run.bold, !!item.run.italic, item.glyphSize ?? item.size, item.run.text);
+          doc.text(item.run.text || '', x + item.border + item.padL, textY + (item.vShift || 0), { lineGap: 0, ...linkOpts });
         }
       }
 
@@ -876,9 +883,11 @@ async function renderNode(node, ctx) {
     const availableWidth = layout.contentWidth() - paddingLeft - paddingRight;
     const hasLinks = runs.some((r) => r.href);
     const runsHaveEmoji = doc._emoji && runs.some((r) => r.isEmoji);
-    // Emoji must go through the manual line-breaker (Type 3 glyphs can't ride
-    // the continued-text auto-wrap path).
-    const renderRunsAsGroup = !hasLinks && (align !== 'left' || runs.length > 1 || runsHaveEmoji);
+    const runsHaveSubSup = runs.some((r) => r.subscript || r.superscript);
+    // Emoji and sub/superscript must go through the manual line-breaker — the
+    // continued-text auto-wrap path can't position Type 3 glyphs or baseline
+    // shifts.
+    const renderRunsAsGroup = !hasLinks && (align !== 'left' || runs.length > 1 || runsHaveEmoji || runsHaveSubSup);
     let h = renderRunsAsGroup
       ? renderInlineRunsAt(runs, ctx, {
           baseStyles: styles,
@@ -1309,7 +1318,9 @@ async function renderNode(node, ctx) {
           const allSameStyle = !runs.some((r) => r.bold || r.italic || r.href);
           const hasLinks = runs.some((r) => r.href);
           const runsHaveEmoji = doc._emoji && runs.some((r) => r.isEmoji);
-          const renderRunsAsGroup = !hasLinks && (align !== 'left' || runs.length > 1 || runsHaveEmoji);
+          const runsHaveSubSup = runs.some((r) => r.subscript || r.superscript);
+          const renderRunsAsGroup =
+            !hasLinks && (align !== 'left' || runs.length > 1 || runsHaveEmoji || runsHaveSubSup);
           const h = renderRunsAsGroup
             ? renderInlineRunsAt(runs, ctx, {
                 baseStyles: styles,
