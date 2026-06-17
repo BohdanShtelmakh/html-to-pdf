@@ -429,7 +429,47 @@ function renderInlineRunsAt(runs, ctx, { baseStyles, align, lineGap, tag, x, y, 
   );
 }
 
+// Measurement memoization. In measureOnly mode renderNode is pure: it draws
+// nothing and only mutates the layout cursor (y / pendingBottomMargin /
+// atStartOfPage). Nested flex/grid re-measure the same subtree many times
+// (exponential in depth), so we cache the layout-state transition per
+// (node, contentWidth, minHeight, entry-state) and replay it on a hit. The
+// cache lives on the per-render `doc`, so it is naturally scoped to one render.
 async function renderNode(node, ctx) {
+  if (ctx && ctx.measureOnly && node && (node.type === 'element' || node.type === 'root') && ctx.doc && ctx.layout) {
+    const { doc, layout } = ctx;
+    const cache = doc._measureCache || (doc._measureCache = new WeakMap());
+    let byKey = cache.get(node);
+    if (!byKey) {
+      byKey = new Map();
+      cache.set(node, byKey);
+    }
+    const mh = Number.isFinite(ctx.minHeight) ? ctx.minHeight : 0;
+    const key =
+      layout.contentWidth().toFixed(2) +
+      '|' + mh +
+      '|' + (layout.atStartOfPage ? 1 : 0) +
+      '|' + (layout.pendingBottomMargin || 0);
+    const hit = byKey.get(key);
+    if (hit) {
+      layout.y += hit.dy;
+      layout.pendingBottomMargin = hit.outPending;
+      layout.atStartOfPage = hit.outAtStart;
+      return;
+    }
+    const startY = layout.y;
+    await renderNodeImpl(node, ctx);
+    byKey.set(key, {
+      dy: layout.y - startY,
+      outPending: layout.pendingBottomMargin,
+      outAtStart: layout.atStartOfPage,
+    });
+    return;
+  }
+  return renderNodeImpl(node, ctx);
+}
+
+async function renderNodeImpl(node, ctx) {
   const { doc, layout } = ctx;
   const measureOnly = !!ctx?.measureOnly;
   const debugInline = process.env.HTML_TO_PDF_DEBUG === '1';
