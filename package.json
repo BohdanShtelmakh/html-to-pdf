@@ -1,7 +1,7 @@
 {
   "name": "html-pdf-lite",
   "version": "1.2.0",
-  "description": "Generate a PDF from HTML using a lightweight HTML/CSS parser and PDFKit.",
+  "description": "Fast HTML to PDF for Node.js without Chromium or Puppeteer — 7.6x faster cold start, tiny PDFs, native color emoji. Ideal for invoices, reports, and serverless.",
   "main": "src/index.js",
   "exports": {
     ".": {
@@ -28,10 +28,19 @@
     "pdf",
     "pdfkit",
     "node-pdf",
+    "no-chromium",
+    "no-puppeteer",
+    "puppeteer-alternative",
+    "chromium-free",
+    "serverless-pdf",
+    "lambda-pdf",
     "server-side-pdf",
     "invoice-pdf",
+    "invoice-generator",
     "report-pdf",
     "backend-pdf",
+    "emoji-pdf",
+    "color-emoji",
     "pdf-buffer",
     "pdf-generator",
     "html-renderer",

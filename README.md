@@ -1,12 +1,27 @@
-# html-to-pdf
+# html-pdf-lite
 
 [![CI](https://github.com/BohdanShtelmakh/html-to-pdf/actions/workflows/ci.yml/badge.svg)](https://github.com/BohdanShtelmakh/html-to-pdf/actions/workflows/ci.yml)
 [![NPM Version](https://img.shields.io/npm/v/html-pdf-lite)](https://www.npmjs.com/package/html-pdf-lite)
 [![NPM Downloads](https://img.shields.io/npm/dw/html-pdf-lite)](https://www.npmjs.com/package/html-pdf-lite)
+[![Install size](https://packagephobia.com/badge?p=html-pdf-lite)](https://packagephobia.com/result?p=html-pdf-lite)
 [![License](https://img.shields.io/npm/l/html-pdf-lite)](https://github.com/BohdanShtelmakh/html-to-pdf/blob/main/LICENSE)
 
-Generate a PDF from HTML using a lightweight HTML/CSS parser and PDFKit.
-Designed for backend use cases like invoices, reports, and server-side PDF generation where Chromium is too heavy.
+**HTML → PDF for Node.js — without Chromium.** A lightweight HTML/CSS renderer on top of PDFKit: **7.6× faster cold start** than Puppeteer, PDFs **52–94% smaller**, and **native color emoji** — no headless browser, no 300 MB dependency.
+
+Built for backends that generate invoices, receipts, and reports — especially serverless (Lambda, Vercel, Cloud Functions) where spinning up Chromium is too slow and too heavy.
+
+![Invoice rendered by html-pdf-lite, with tables and color emoji](https://raw.githubusercontent.com/BohdanShtelmakh/html-to-pdf/main/docs/hero.png)
+
+<sub>An invoice produced from plain HTML — dark header, striped rows, `colspan` totals, and real color emoji as selectable text. No browser involved.</sub>
+
+## Why html-pdf-lite
+
+- 🪶 **No Chromium** — a few MB installed, not hundreds. Nothing to download at runtime.
+- ⚡ **Fast cold start** — ~86 ms vs ~654 ms for Puppeteer. Critical on serverless.
+- 📦 **Tiny PDFs** — 52–94% smaller than headless-Chrome output.
+- 😀 **Native color emoji** — embedded as real PDF Type 3 fonts (like Chromium), searchable/selectable, not images.
+- 🧾 **Made for documents** — tables (`colspan`/`rowspan`, repeating headers), flexbox, grid, page breaks, links, SVG, custom fonts.
+- 🟦 **TypeScript types** included · zero config to start.
 
 ## Install
 
@@ -14,48 +29,42 @@ Designed for backend use cases like invoices, reports, and server-side PDF gener
 npm install html-pdf-lite
 ```
 
-## Usage
+## Quick start
 
 ```js
 const fs = require('fs');
 const { renderPdfFromHtml } = require('html-pdf-lite');
 
-async function run() {
-  const html = '<html><body><h1>Hello</h1></body></html>';
-  const pdfBuffer = await renderPdfFromHtml(html, {
-    rootSelector: 'body',
-    fetchExternalCss: false,
-    loadTimeoutMs: 3000,
-    externalCssTimeoutMs: 5000,
-    imgLoadTimeoutMs: 3000,
-    enableInternalAnchors: true,
-    allowScripts: false,
-    ignoreInvalidImages: true,
-    autoResolveFonts: true,
-    fonts: {
-      Helvetica: {
-        regular: '/path/to/Helvetica-Regular.ttf',
-        bold: '/path/to/Helvetica-Bold.ttf'
-      }
-    }
-  });
-
-  fs.writeFileSync('output.pdf', pdfBuffer);
-}
-
-run();
+const pdf = await renderPdfFromHtml('<h1>Hello 👋</h1><p>Invoice ready ✅</p>');
+fs.writeFileSync('out.pdf', pdf); // pdf is a Buffer
 ```
 
-## 🚀 Why this exists
+That's it — no browser, no options required. See the [full options](#api) for fonts, margins, emoji, external CSS, and more.
 
-Chrome-based tools like Puppeteer or Playwright are slow for backend PDF generation:
-- 2–4 seconds per PDF
-- Huge memory usage
-- Cold starts in serverless
+## html-pdf-lite vs the alternatives
 
-**html-pdf-lite** is built for speed-first PDF generation.
+| | html-pdf-lite | Puppeteer / Playwright | wkhtmltopdf | pdfmake / jsPDF |
+|:--|:--:|:--:|:--:|:--:|
+| Renders HTML + CSS | ✅ | ✅ | ✅ | ❌ (own API) |
+| No Chromium / native binary | ✅ | ❌ | ❌ | ✅ |
+| Install size | **~a few MB** | ~300 MB | ~50 MB native | small |
+| Cold start | **~86 ms** | ~650 ms | ~200 ms | fast |
+| Serverless-friendly | ✅ | ⚠️ heavy | ⚠️ binary | ✅ |
+| Color emoji | ✅ | ✅ | ⚠️ | ❌ |
+| Full Chrome CSS fidelity | ❌ | ✅ | ⚠️ | n/a |
 
-### Benchmarks
+Choose html-pdf-lite when you control the HTML (invoices, reports, tickets) and want speed + small footprint. Choose Puppeteer when you need pixel-perfect fidelity for arbitrary web pages.
+
+## What's new in 1.2.0
+
+- 😀 **Native color emoji** (sbix / COLRv0) via PDF Type 3 fonts — searchable text, optional auto-download
+- 📊 **Table `rowspan`** + `<thead>` that repeats on every page
+- 📐 **Explicit block `width`** + `margin: auto` centering (e.g. `width: 200mm; margin: 0 auto`)
+- ➗ **`<sub>` / `<sup>`**, `<hr>`, and percentage padding/margin
+- 🎨 Correct asymmetric borders with `border-radius`
+- 🚀 **Much faster** — big cut in parse time and memoized layout for deeply nested flex/grid
+
+## Benchmarks
 
 Measured on Node 22, A4 output, 15 iterations (warm):
 
