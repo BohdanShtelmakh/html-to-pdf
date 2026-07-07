@@ -1,6 +1,6 @@
 {
   "name": "html-pdf-lite",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "description": "Fast HTML to PDF for Node.js without Chromium or Puppeteer — 7.6x faster cold start, tiny PDFs, native color emoji. Ideal for invoices, reports, and serverless.",
   "main": "src/index.js",
   "exports": {
