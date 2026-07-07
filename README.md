@@ -6,7 +6,7 @@
 [![Install size](https://packagephobia.com/badge?p=html-pdf-lite)](https://packagephobia.com/result?p=html-pdf-lite)
 [![License](https://img.shields.io/npm/l/html-pdf-lite)](https://github.com/BohdanShtelmakh/html-to-pdf/blob/main/LICENSE)
 
-**HTML → PDF for Node.js — without Chromium.** A lightweight HTML/CSS renderer on top of PDFKit: **7.6× faster cold start** than Puppeteer, PDFs **52–94% smaller**, and **native color emoji** — no headless browser, no 300 MB dependency.
+**HTML → PDF for Node.js — without Chromium.** A lightweight HTML/CSS renderer on top of PDFKit: **7.6× faster cold start** than Puppeteer, PDFs **52–94% smaller**, and **native color emoji** — no headless browser, no Chromium to download.
 
 Built for backends that generate invoices, receipts, and reports — especially serverless (Lambda, Vercel, Cloud Functions) where spinning up Chromium is too slow and too heavy.
 
@@ -16,7 +16,7 @@ Built for backends that generate invoices, receipts, and reports — especially 
 
 ## Why html-pdf-lite
 
-- 🪶 **No Chromium** — a few MB installed, not hundreds. Nothing to download at runtime.
+- 🪶 **No Chromium** — ~30 MB self-contained, and nothing downloaded at runtime (Puppeteer pulls ~170 MB+ of Chromium on top).
 - ⚡ **Fast cold start** — ~86 ms vs ~654 ms for Puppeteer. Critical on serverless.
 - 📦 **Tiny PDFs** — 52–94% smaller than headless-Chrome output.
 - 😀 **Native color emoji** — embedded as real PDF Type 3 fonts (like Chromium), searchable/selectable, not images.
@@ -47,7 +47,7 @@ That's it — no browser, no options required. See the [full options](#api) for 
 |:--|:--:|:--:|:--:|:--:|
 | Renders HTML + CSS | ✅ | ✅ | ✅ | ❌ (own API) |
 | No Chromium / native binary | ✅ | ❌ | ❌ | ✅ |
-| Install size | **~a few MB** | ~300 MB | ~50 MB native | small |
+| Install footprint | **~30 MB** (self-contained) | ~170 MB+ (+ Chromium) | ~50 MB native | small |
 | Cold start | **~86 ms** | ~650 ms | ~200 ms | fast |
 | Serverless-friendly | ✅ | ⚠️ heavy | ⚠️ binary | ✅ |
 | Color emoji | ✅ | ✅ | ⚠️ | ❌ |
