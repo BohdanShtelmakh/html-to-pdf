@@ -2,6 +2,7 @@
   "packageVersion": "1.2.4",
   "node": "v24.21.0",
   "fontPolicy": "PDF standard Helvetica; system and emoji resolution disabled",
+  "rasterFontPolicy": "Helvetica substituted with single-face Arial files for macOS Poppler previews only",
   "rasterDpi": 96,
   "examples": [
     {

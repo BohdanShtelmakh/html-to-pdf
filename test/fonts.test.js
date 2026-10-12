@@ -1,4 +1,5 @@
 const assert = require('assert');
+const PDFDocument = require('pdfkit');
 const { renderPdfFromHtml } = require('../src/index.js');
 const { assertBuffer } = require('./helpers');
 
@@ -46,6 +47,42 @@ async function run() {
     <p style="font-weight: 400;">Normal weight</p>
   `);
   assertBuffer(weight, 'numeric font weight');
+
+  // Verify the font at actual glyph emission, not merely during measurement.
+  const fragments = [];
+  const originalFragment = PDFDocument.prototype._fragment;
+  PDFDocument.prototype._fragment = function (text, ...args) {
+    fragments.push({ text: String(text), font: this._font.name });
+    return originalFragment.call(this, text, ...args);
+  };
+  try {
+    const standardFonts = await renderPdfFromHtml(`
+      <body style="font-family: Helvetica;">
+        <p>RegularMarker <strong>StrongMarker</strong> <em>ItalicMarker</em></p>
+        <p style="font-weight:bold">CssBoldMarker</p>
+        <p style="font-weight:700">NumericBoldMarker</p>
+        <p style="font-weight:400">NormalMarker</p>
+        <div style="text-align:right"><strong>AlignedBoldMarker</strong><br>AlignedNormalMarker</div>
+        <table><tr><td><strong>CellBoldMarker</strong><br>CellNormalMarker</td></tr></table>
+        <p><strong><em>BoldItalicMarker</em></strong></p>
+      </body>
+    `, { autoResolveFonts: false, autoResolveEmojiFont: false });
+    assertBuffer(standardFonts, 'standard font emission');
+    for (const font of ['Helvetica', 'Helvetica-Bold', 'Helvetica-Oblique', 'Helvetica-BoldOblique']) {
+      assert.ok(standardFonts.includes(Buffer.from(`/BaseFont /${font}\n`)), `${font} must be present in PDF resources`);
+    }
+  } finally {
+    PDFDocument.prototype._fragment = originalFragment;
+  }
+  for (const [marker, font] of Object.entries({
+    RegularMarker: 'Helvetica', StrongMarker: 'Helvetica-Bold', ItalicMarker: 'Helvetica-Oblique',
+    CssBoldMarker: 'Helvetica-Bold', NumericBoldMarker: 'Helvetica-Bold', NormalMarker: 'Helvetica',
+    AlignedBoldMarker: 'Helvetica-Bold', AlignedNormalMarker: 'Helvetica',
+    CellBoldMarker: 'Helvetica-Bold', CellNormalMarker: 'Helvetica', BoldItalicMarker: 'Helvetica-BoldOblique',
+  })) {
+    const matching = fragments.filter(fragment => new RegExp(`\\b${marker}\\b`).test(fragment.text));
+    assert.ok(matching.length && matching.every(fragment => fragment.font === font), `${marker} must draw using ${font}`);
+  }
 
   // Text-aware fallback avoids missing glyph boxes for common currency symbols.
   const currency = await renderPdfFromHtml(`

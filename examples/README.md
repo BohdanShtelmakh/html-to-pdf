@@ -37,7 +37,11 @@ are **not approved regression-test baselines** or byte-identical PDF guarantees.
 The report exercises mixed-style inline wrapping, explicit `<br>` breaks and
 frames nested in percentage-width flex columns. These cases also have targeted
 coordinate-based regression tests in `test/inline-layout.test.js`.
-Bold text also needs dedicated checking in the standard-font configuration.
+Standard-font bold/italic emission is covered by `test/fonts.test.js`.
+On macOS, Poppler previews use a process-local Fontconfig configuration mapping
+Helvetica to separate Arial font files: the default Helvetica TTC substitution
+can rasterize bold as regular. This affects PNG previews only, not the generated
+PDF or system configuration. The raster font policy is recorded in the manifest.
 The `<br>` table-cell and header cases here remain useful checks.
 
 `examples/` is excluded from npm publication by the package's `files` allowlist
