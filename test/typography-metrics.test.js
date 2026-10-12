@@ -17,7 +17,7 @@ async function run() {
   const fragments = [];
   const original = PDFDocument.prototype._fragment;
   PDFDocument.prototype._fragment = function (text, x, y, options) {
-    fragments.push({ text: String(text).trim(), x, y });
+    fragments.push({ text: String(text).trim(), x, y, page: this.page });
     return original.call(this, text, x, y, options);
   };
   try {
@@ -31,12 +31,33 @@ async function run() {
       <table style="margin:0;line-height:1.5"><tr><td style="padding:0"><span style="font-size:20pt">LargeCell</span><br>SmallCell</td></tr>
         <tr><td style="padding:0">AfterLargeCell</td></tr></table>
     </body>`, { autoResolveFonts: false, autoResolveEmojiFont: false });
+    const rows = Array.from({ length: 60 }, (_, i) => `<tr><td>Row${i}</td></tr>`).join('');
+    for (const withHeader of [false, true]) {
+      const endings = [];
+      for (const margin of [0, 12]) {
+        const start = fragments.length;
+        await renderPdfFromHtml(`<body style="font-family:Helvetica;font-size:10pt;margin:0">
+          <table style="margin:0">${withHeader ? '<thead><tr><th>Header</th></tr></thead>' : ''}<tbody>${rows}</tbody></table>
+          <p style="margin:${margin}pt 0 0">AfterTable</p></body>`, {
+          autoResolveFonts: false, autoResolveEmojiFont: false,
+        });
+        const drawn = fragments.slice(start);
+        const firstRow = drawn.find(fragment => fragment.text === 'Row0');
+        const lastRow = drawn.find(fragment => fragment.text === 'Row59');
+        const after = drawn.find(fragment => fragment.text === 'AfterTable');
+        assert.notStrictEqual(firstRow.page, lastRow.page, 'table must exercise a page continuation');
+        assert.strictEqual(after.page, lastRow.page, 'paragraph must follow the last row on the same page');
+        endings.push(after.y - lastRow.y);
+      }
+      assert.ok(Math.abs(endings[1] - endings[0] - 12) < 0.01,
+        `paragraph top margin must survive table pagination (header: ${withHeader})`);
+    }
   } finally {
     PDFDocument.prototype._fragment = original;
   }
   const find = text => fragments.find(fragment => fragment.text === text);
   const first = find('FirstCell');
-  const paragraphLines = fragments.filter(fragment => fragment.y < first.y);
+  const paragraphLines = fragments.filter(fragment => fragment.page === first.page && fragment.y < first.y);
   assert.ok(paragraphLines.length >= 3, 'native paragraph wrapping must be exercised');
   for (let i = 1; i < paragraphLines.length; i++) assert.ok(Math.abs(paragraphLines[i].y - paragraphLines[i - 1].y - 15) < 0.01,
     'native paragraph baseline spacing must equal CSS line-height');

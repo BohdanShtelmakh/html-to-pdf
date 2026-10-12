@@ -687,6 +687,7 @@ async function renderTable(node, ctx, tableStyles = {}) {
         await drawCell(p.cell, ctx, { x, y, spanWidth, spanHeight, rowStyles, tableStyles, cellPadding });
       }
       layout.cursorToNextLine(rowH);
+      layout.atStartOfPage = false;
     }
   }
 
@@ -729,6 +730,7 @@ async function renderTable(node, ctx, tableStyles = {}) {
     }
 
     layout.cursorToNextLine(rowH + ROW_GAP);
+    layout.atStartOfPage = false;
   }
 }
 
