@@ -4,8 +4,14 @@ const { renderPdfFromHtml } = require('../src');
 const { pageCount } = require('./helpers');
 const { loadComparisonCases } = require('../examples/comparison-cases.cjs');
 const { rowsByPage, validateResult } = require('../examples/comparison-checks.cjs');
+const { invoiceOffsets, compareGeometry } = require('../examples/comparison-geometry.cjs');
 
 async function run() {
+  assert.ok(compareGeometry([10, 20], [10.5, 20], 1).passed);
+  assert.ok(!compareGeometry([10, 20], [12, 20], 1).passed, 'shifted geometry must fail');
+  assert.throws(() => compareGeometry([NaN], [10], 1), /Invalid geometry/);
+  assert.throws(() => compareGeometry([10], [], 1), /matching nonempty/);
+  assert.throws(() => invoiceOffsets('<html xmlns="http://www.w3.org/1999/xhtml"><body/></html>'), /Expected one geometry marker/);
   const spec = { expectedPages: 2, markers: ['Customer 001', 'Customer 002'],
     expectedRowsByPage: [[1], [2]], pageMarkers: [['Header'], ['Header']] };
   const good = 'Header Customer 001\fHeader Customer 002\f';

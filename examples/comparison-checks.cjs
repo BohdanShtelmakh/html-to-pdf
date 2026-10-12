@@ -7,7 +7,7 @@ function rowsByPage(text, pages) {
 function validateResult(spec, { text, pages }) {
   const issues = [];
   const compact = text.replace(/\s+/g, '');
-  if (pages !== spec.expectedPages) issues.push(`Expected ${spec.expectedPages} pages, received ${pages}`);
+  if (spec.expectedPages != null && pages !== spec.expectedPages) issues.push(`Expected ${spec.expectedPages} pages, received ${pages}`);
   for (const marker of spec.markers) {
     const count = compact.split(marker.replace(/\s+/g, '')).length - 1;
     if (count !== 1) issues.push(`Expected one occurrence of ${marker}, received ${count}`);

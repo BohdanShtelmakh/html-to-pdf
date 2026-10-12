@@ -115,3 +115,25 @@ tests also check explicit descendant overrides. These outputs are not accepted
 as pixel-identical visual baselines. Small fixtures do not establish
 correctness for oversized rows, nested-table pagination or a framed block that
 crosses a page boundary.
+
+### Geometry And Stress Checks
+
+`npm run examples:compare` also compares invoice amount centers relative to the
+two description lines (1.5pt tolerance), the long-word and mixed-style frame
+heights (3px tolerance), and the text-to-frame gap after the long-word block
+(1.5pt tolerance). These are explicit geometry tolerances, not pixel equality.
+The new text-to-frame check currently fails: the long-word fixture's gap differs
+by approximately 2.06pt. Amount alignment and both frame-height checks pass. The
+normal comparison therefore returns a nonzero exit code until the gap is fixed;
+the tolerance has not been increased to hide the finding.
+
+Run `npm run examples:stress` separately for an oversized table row, a paginated
+nested table and a multi-page framed block. Outputs go to
+`tmp/pdf-stress-comparison`, not the regular comparison directory. The command
+returns a failure for missing markers, empty pages, page-count differences from
+Chromium or missing Lite frame fragments. It does not approve those outputs.
+
+Current stress findings: the oversized row produces 4 pages versus Chromium's 2;
+the nested table produces 4 versus 3, and both have an empty first page. The framed
+block has 3 pages in both engines but its frame is missing on all Lite pages.
+These remain open renderer limitations, not accepted baselines.

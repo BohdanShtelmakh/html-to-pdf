@@ -55,4 +55,14 @@ function loadComparisonCases() {
   ];
 }
 
-module.exports = { loadComparisonCases };
+function loadStressCases() {
+  const markers = Array.from({ length: 70 }, (_, i) => `StressLine${String(i + 1).padStart(3, '0')}`);
+  const lines = markers.map(marker => `<p>${marker}</p>`).join('');
+  return [
+    { name: 'stress-framed-block', markers, html: documentHtml(`<div style="border:1px solid #777;padding:12px">${lines}</div>`) },
+    { name: 'stress-tall-row', markers, html: documentHtml(`<table><tr><td>${markers.join('<br>')}</td><td>Companion</td></tr></table>`) },
+    { name: 'stress-nested-pagination', markers, html: documentHtml(`<table><tr><td>OuterLabel<table>${markers.map(marker => `<tr><td>${marker}</td><td>Value</td></tr>`).join('')}</table></td></tr></table>`) },
+  ];
+}
+
+module.exports = { loadComparisonCases, loadStressCases };
