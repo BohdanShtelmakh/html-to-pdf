@@ -207,7 +207,7 @@ async function renderFlexRow(children, ctx, { startX, startY, width, gap, rowGap
       measureOnly: true,
     });
     measureLayout.atStartOfPage = false;
-    await renderNode(child, { doc, layout: measureLayout, options: ctx.options, measureOnly: true });
+    await renderNode(child, { doc, layout: measureLayout, options: ctx.options, measureOnly: true, allocatedFlexWidth: true });
     return Math.max(0, measureLayout.y - top);
   };
 
@@ -255,7 +255,7 @@ async function renderFlexRow(children, ctx, { startX, startY, width, gap, rowGap
         measureOnly,
       });
       childLayout.atStartOfPage = false;
-      await renderNode(child, { doc, layout: childLayout, options: ctx.options, measureOnly });
+      await renderNode(child, { doc, layout: childLayout, options: ctx.options, measureOnly, allocatedFlexWidth: true });
       const childHeight = childLayout.y - rowY;
       if (debugInline && child?.tag === 'div') {
         console.log('[flex-item]', {
@@ -358,7 +358,7 @@ async function renderFlexRow(children, ctx, { startX, startY, width, gap, rowGap
     });
     childLayout.atStartOfPage = false;
     const minH = (!measureOnly && align === 'stretch' && maxHeight > 0) ? maxHeight : undefined;
-    await renderNode(child, { doc, layout: childLayout, options: ctx.options, measureOnly, minHeight: minH });
+    await renderNode(child, { doc, layout: childLayout, options: ctx.options, measureOnly, minHeight: minH, allocatedFlexWidth: true });
     if (!needsTwoPass || measureOnly) {
       maxHeight = Math.max(maxHeight, childLayout.y - startY);
     }

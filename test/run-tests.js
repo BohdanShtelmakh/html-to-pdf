@@ -7,6 +7,7 @@ const tests = [
   require('./images-edge.test'),
   require('./layout.test'),
   require('./layout-edge.test'),
+  require('./inline-layout.test'),
   require('./css.test'),
   require('./blockquote.test'),
   require('./validation.test'),

@@ -237,8 +237,16 @@ function renderInlineRuns(runs, ctx, { baseStyles, align, lineGap, tag }) {
   const lines = [];
   let current = { runs: [], width: 0, height: 0 };
 
-  for (const run of runs) {
+  const pendingRuns = [...runs];
+  for (let runIndex = 0; runIndex < pendingRuns.length; runIndex++) {
+    const run = pendingRuns[runIndex];
     const s = { ...baseStyles, ...(run.styles || {}) };
+    if (run.isLineBreak) {
+      current.height = Math.max(current.height, lineHeightValue(s, styleNumber(s, 'font-size', BASE_PT), tag));
+      lines.push(current);
+      current = { runs: [], width: 0, height: 0 };
+      continue;
+    }
     const inlineBox = runHasInlineBoxStyles(run.styles || {}, baseStyles);
     const size = styleNumber(s, 'font-size', BASE_PT);
     const letterSpacing = styleNumber(s, 'letter-spacing', 0, { baseSize: size });
@@ -271,6 +279,38 @@ function renderInlineRuns(runs, ctx, { baseStyles, align, lineGap, tag }) {
     const glyphSize = isSubSup ? size * 0.75 : size;
     const vShift = run.superscript ? -size * 0.33 : run.subscript ? size * 0.12 : 0;
     selectFontForInline(doc, s, !!run.bold, !!run.italic, glyphSize, text);
+    // Split with the same font and width used for drawing, not PDFKit's implicit wrapping.
+    if (!inlineBox && !run.isEmoji && shouldCollapseWhitespace(s) && s['white-space'] !== 'nowrap') {
+      const available = Math.max(0, contentWidth - current.width);
+      const widthOf = (value) => doc.widthOfString(value, { characterSpacing: letterSpacing }) +
+        wordSpacing * (value.match(/ /g) || []).length;
+      if (widthOf(text) > available && text.length > 1) {
+        let end = 0;
+        let wordEnd = 0;
+        for (const character of text) {
+          const next = end + character.length;
+          if (widthOf(text.slice(0, next)) > available) break;
+          end = next;
+          if (/\s/.test(character)) wordEnd = end;
+        }
+        if (!wordEnd && current.width > 0) {
+          lines.push(current);
+          current = { runs: [], width: 0, height: 0 };
+          pendingRuns[runIndex] = { ...run, text: text.replace(/^ +/, '') };
+          runIndex--;
+          continue;
+        }
+        end = wordEnd || end || Array.from(text)[0].length;
+        if (end < text.length) {
+          pendingRuns.splice(runIndex, 1,
+            { ...run, text: text.slice(0, end).replace(/ +$/, '') },
+            { ...run, text: '\n', isLineBreak: true },
+            { ...run, text: text.slice(end).replace(/^ +/, '') });
+          runIndex--;
+          continue;
+        }
+      }
+    }
     // Emoji runs draw a Type 3 color glyph; width comes from the emoji font's
     // advance, baseline from the surrounding text font's ascender.
     const emojiInfo = run.isEmoji && doc._emoji ? doc._emoji.lookup(run.grapheme) : null;
@@ -398,7 +438,12 @@ function renderInlineRuns(runs, ctx, { baseStyles, align, lineGap, tag }) {
             enableInternalAnchors: ctx?.options?.enableInternalAnchors,
           });
           selectFontForInline(doc, item.styles, !!item.run.bold, !!item.run.italic, item.glyphSize ?? item.size, item.run.text);
-          doc.text(item.run.text || '', x + item.border + item.padL, textY + (item.vShift || 0), { lineGap: 0, ...linkOpts });
+          doc.text(item.run.text || '', x + item.border + item.padL, textY + (item.vShift || 0), {
+            lineGap: 0, lineBreak: false,
+            characterSpacing: styleNumber(item.styles, 'letter-spacing', 0, { baseSize: item.size }),
+            wordSpacing: styleNumber(item.styles, 'word-spacing', 0, { baseSize: item.size }),
+            ...linkOpts,
+          });
         }
       }
 
@@ -448,6 +493,7 @@ async function renderNode(node, ctx) {
     const key =
       layout.contentWidth().toFixed(2) +
       '|' + mh +
+      '|' + (ctx.allocatedFlexWidth ? 1 : 0) +
       '|' + (layout.atStartOfPage ? 1 : 0) +
       '|' + (layout.pendingBottomMargin || 0);
     const hit = byKey.get(key);
@@ -474,7 +520,7 @@ async function renderNodeImpl(node, ctx) {
   const measureOnly = !!ctx?.measureOnly;
   const debugInline = process.env.HTML_TO_PDF_DEBUG === '1';
   const minHeight = Number.isFinite(ctx?.minHeight) ? ctx.minHeight : null;
-  const childCtx = minHeight != null ? { ...ctx, minHeight: null } : ctx;
+  const childCtx = { ...ctx, minHeight: null, allocatedFlexWidth: false };
   if (!node) return;
 
   if (node.type === 'text') {
@@ -1086,7 +1132,7 @@ async function renderNodeImpl(node, ctx) {
     // Honour an explicit width (px/%/mm/...) and horizontal margin auto, so e.g.
     // `width: 200mm; margin: 0 auto` produces a centred fixed-width block instead
     // of always filling the content area. Width-less blocks keep prior behaviour.
-    const explicitWidth = styleNumber(styles, 'width', null, { percentBase: availWidth });
+    const explicitWidth = ctx.allocatedFlexWidth ? null : styleNumber(styles, 'width', null, { percentBase: availWidth });
     let blockX = layout.x;
     let blockWidth = availWidth;
     if (explicitWidth != null && explicitWidth >= 0) {
@@ -1142,23 +1188,10 @@ async function renderNodeImpl(node, ctx) {
       if (inlineOnly) {
         const size = styleNumber(styles, 'font-size', BASE_PT);
         const gap = lineGapFor(size, styles, tag);
-        const plain = gatherPlainText(node);
-        selectFontForInline(doc, styles, false, false, size, plain);
-        const letterSpacing = styleNumber(styles, 'letter-spacing', 0, { baseSize: size });
-        const wordSpacing = styleNumber(styles, 'word-spacing', 0, { baseSize: size });
-        const spaces = (plain.match(/ /g) || []).length;
-        const textWidth = doc.widthOfString(plain, { characterSpacing: letterSpacing }) + wordSpacing * spaces;
-        const lineHeight = lineHeightValue(styles, size, tag);
-        const singleLine = !plain.includes('\n') && textWidth <= contentWidth;
-        measuredContent = singleLine
-          ? lineHeight
-          : doc.heightOfString(plain, {
-              width: contentWidth,
-              align: textAlign(styles),
-              lineGap: gap,
-              characterSpacing: letterSpacing,
-              wordSpacing,
-            });
+        measuredContent = renderInlineRunsAt(normalizeRuns(inlineRuns(node), shouldCollapseWhitespace(styles)), ctx, {
+          baseStyles: styles, align, lineGap: gap, tag,
+          x: contentX, y: contentStartY, width: contentWidth, measureOnly: true,
+        });
       } else if (isFlex || isGrid) {
         const measureChildren = elementChildren(node);
         if (isFlex) {

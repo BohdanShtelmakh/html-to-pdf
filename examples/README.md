@@ -34,10 +34,9 @@ are **not approved regression-test baselines** or byte-identical PDF guarantees.
 
 ## Current Layout Caveats
 
-The examples use block elements for address/total lines and grid for framed
-columns. Initial review exposed differences with `<br>` in generic blocks,
-mixed-style inline text wrapping, and frames nested in flex columns. Those
-cases must be tested separately rather than accepted as correct visual baselines.
+The report exercises mixed-style inline wrapping, explicit `<br>` breaks and
+frames nested in percentage-width flex columns. These cases also have targeted
+coordinate-based regression tests in `test/inline-layout.test.js`.
 Bold text also needs dedicated checking in the standard-font configuration.
 The `<br>` table-cell and header cases here remain useful checks.
 
