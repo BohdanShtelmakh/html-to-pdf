@@ -26,6 +26,19 @@ async function capture(html) {
 }
 
 async function run() {
+  for (const content of ['<strong>Wrapped bold words followed by ordinary text</strong>',
+    '<strong>Mixed bold</strong> followed by <em>italic words</em><br>FinalLine']) {
+    const heights = [];
+    for (const margin of [0, 16]) {
+      const framed = await capture(`<div style="width:110px;border:1px solid black;padding:8px;font-family:Helvetica;font-size:13px">
+        <p style="margin:0 0 ${margin}px;line-height:1.5">${content}</p></div>`);
+      assert.ok(framed.rectangles.length, 'outer frame must be painted');
+      heights.push(Math.max(...framed.rectangles.map(rect => rect.y + rect.height)) -
+        Math.min(...framed.rectangles.map(rect => rect.y)));
+    }
+    assert.ok(Math.abs(heights[1] - heights[0] - 12) < 0.01,
+      'prepainted frame must include the final child bottom margin');
+  }
   const mixed = await capture(`<div style="width:200px;padding:16px;border:1px solid black;font-family:Helvetica;font-weight:bold">
     InlineMarker<div>BlockMarker</div></div>`);
   const inline = mixed.text.find(call => call.value === 'InlineMarker');

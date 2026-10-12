@@ -1264,7 +1264,7 @@ async function renderNodeImpl(node, ctx) {
         for (const child of groupedMeasure) {
           await renderNode(child, { doc, layout: measureLayout, options: ctx.options, measureOnly: true });
         }
-        measuredContent = Math.max(0, measureLayout.y - contentStartY);
+        measuredContent = Math.max(0, measureLayout.y - contentStartY + measureLayout.pendingBottomMargin);
       }
 
       if (debug && className) {
