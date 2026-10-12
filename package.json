@@ -66,7 +66,8 @@
     "bench": "node bench/run.js",
     "playground": "node playground/server.cjs",
     "test:playground": "node --test playground/server.test.cjs",
-    "examples": "node examples/generate.cjs"
+    "examples": "node examples/generate.cjs",
+    "examples:compare": "node examples/compare.cjs"
   },
   "dependencies": {
     "@resvg/resvg-js": "^2.6.2",

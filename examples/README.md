@@ -46,3 +46,35 @@ The `<br>` table-cell and header cases here remain useful checks.
 
 `examples/` is excluded from npm publication by the package's `files` allowlist
 and `.npmignore`; generated PDFs and PNGs belong only to the repository.
+
+## Compare With Chromium
+
+```sh
+npm run examples:compare
+```
+
+Uses the existing Puppeteer dev dependency and Poppler. Both engines receive
+unchanged HTML; Chromium respects CSS `@page` and prints backgrounds. PDFs,
+96-DPI previews, extracted text and a version/source-hash manifest are saved
+under ignored `tmp/pdf-comparison/{lite,chromium}/`. No server is contacted.
+The command checks selected content markers (including every account in the
+register) for omissions or duplication; this is not a full visual correctness
+test. It never updates or approves regression baselines. Chromium embeds system
+fonts; Lite uses standard Helvetica, so pixel equality is not expected.
+
+Local review with package 1.2.4 and Chrome 148 found:
+
+| Example | Lite / Chromium pages | Review |
+| --- | --- | --- |
+| Invoice | 1 / 1 | No visible text collisions; Lite's address frames are narrower and spacing differs. |
+| Report | 1 / 1 | Mixed-style text, bold and line breaks render; Lite's KPI blocks have excessive inset/height. |
+| Register | 3 / 3 | All 50 accounts occur once and headers repeat; Lite page ranges are 1-17, 18-36, 37-50 versus Chromium's 1-19, 20-40, 41-50. |
+
+Do not approve the current invoice/report as layout baselines yet. Code review
+identified two concrete sizing issues: anonymous inline groups copy the parent's
+padding/borders (`groupMixedChildren` in `src/pdf/render-node.js`), and explicit
+flex widths omit content-box padding/borders in the flex basis calculation
+(`src/pdf/render-flex.js`). The manual inline renderer also adds `lineGap` to a
+line height that already includes CSS leading, increasing mixed-style paragraph
+spacing. Table pagination additionally depends on PDFKit font/line-height
+metrics; a matching total page count alone does not establish browser parity.
