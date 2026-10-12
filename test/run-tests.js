@@ -9,6 +9,7 @@ const tests = [
   require('./layout-edge.test'),
   require('./inline-layout.test'),
   require('./box-model.test'),
+  require('./typography-metrics.test'),
   require('./css.test'),
   require('./blockquote.test'),
   require('./validation.test'),

@@ -7,21 +7,21 @@
   "examples": [
     {
       "name": "invoice",
-      "bytes": 2706,
+      "bytes": 2705,
       "pages": [
         "invoice-page-1.png"
       ]
     },
     {
       "name": "report",
-      "bytes": 2597,
+      "bytes": 2590,
       "pages": [
         "report-page-1.png"
       ]
     },
     {
       "name": "long-table",
-      "bytes": 6710,
+      "bytes": 6739,
       "pages": [
         "long-table-page-1.png",
         "long-table-page-2.png",

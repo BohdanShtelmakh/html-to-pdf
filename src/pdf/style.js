@@ -28,7 +28,7 @@ function tagDefaults(tag) {
     case 'ol':
       return { size: BASE_PT, mt: 0, mb: em(1), lh: BODY_LH, bold: false };
     case 'table':
-      return { size: BASE_PT, mt: em(1), mb: em(1), lh: BODY_LH, bold: false };
+      return { size: BASE_PT, mt: 0, mb: 0, lh: BODY_LH, bold: false };
     case 'figure':
       return { size: BASE_PT, mt: em(1), mb: em(1), lh: BODY_LH, bold: false };
     case 'figcaption':

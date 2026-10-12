@@ -12,7 +12,7 @@ const {
   lineHeightValue,
   parsePx,
 } = require('./style');
-const { inlineRuns, selectFontForInline, gatherPlainText } = require('./text');
+const { inlineRuns, selectFontForInline, gatherPlainText, nativeLineGap } = require('./text');
 const { renderList, renderPre } = require('./blocks');
 const { Layout } = require('./layout');
 const { getRunLinkTextOptions } = require('./link');
@@ -840,7 +840,7 @@ async function renderNodeImpl(node, ctx) {
   if (['h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(tag)) {
     const size = styleNumber(styles, 'font-size', defaultFontSizeFor(tag));
 
-    const gap = lineGapFor(size, styles, tag);
+    let gap = lineGapFor(size, styles, tag);
     const runs = normalizeRuns(inlineRuns(node), shouldCollapseWhitespace(styles));
     const text = runs.map((r) => r.text).join('');
     const letterSpacing = styleNumber(styles, 'letter-spacing', 0, { baseSize: size });
@@ -860,6 +860,7 @@ async function renderNodeImpl(node, ctx) {
       borderBottomStyle === 'none' || borderBottomStyle === 'hidden' || !borderBottomPaint ? 0 : borderBottomWidth;
 
     selectFontForInline(doc, styles, true, false, size, text);
+    gap = nativeLineGap(doc, styles, size, tag);
     // Emoji in a heading must go through the manual line-breaker; force bold on
     // the non-emoji runs to preserve the heading's default weight.
     const headingHasEmoji = doc._emoji && runs.some((r) => r.isEmoji);
@@ -946,7 +947,7 @@ async function renderNodeImpl(node, ctx) {
     isInlineOnly(node) && !containsBr(node) && display !== 'flex' && display !== 'grid' && !hasExplicitWidth;
   if (tag === 'p' || tag === 'span' || tag === 'figcaption' || inlineOnlyNoBr) {
     const size = styleNumber(styles, 'font-size', BASE_PT);
-    const gap = lineGapFor(size, styles, tag);
+    let gap = lineGapFor(size, styles, tag);
     const runs = normalizeRuns(inlineRuns(node), shouldCollapseWhitespace(styles));
     const useInlineBoxes = runs.some((run) => runHasInlineBoxStyles(run.styles || {}, styles));
     const plain = runs.map((r) => r.text).join('');
@@ -967,6 +968,7 @@ async function renderNodeImpl(node, ctx) {
     const borderLeft = borderLeftWidth > 0 && borderLeftPaint ? borderLeftWidth : 0;
 
     selectFontForInline(doc, styles, false, false, size, plain);
+    gap = nativeLineGap(doc, styles, size, tag);
     const availableWidth = layout.contentWidth() - paddingLeft - paddingRight;
     const hasLinks = runs.some((r) => r.href);
     const runsHaveEmoji = doc._emoji && runs.some((r) => r.isEmoji);

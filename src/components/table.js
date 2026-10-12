@@ -1,5 +1,5 @@
 const { styleNumber, styleColor, textAlign, lineHeightValue, parsePxWithOptions } = require('../pdf/style');
-const { inlineRuns, selectFontForInline, gatherPlainText } = require('../pdf/text');
+const { inlineRuns, selectFontForInline, gatherPlainText, nativeLineGap } = require('../pdf/text');
 const { getRunLinkTextOptions } = require('../pdf/link');
 const { Layout } = require('../pdf/layout');
 
@@ -187,7 +187,15 @@ function normalizeCellRuns(runs, styles = {}) {
   return out;
 }
 
-function renderCellRuns(doc, runs, { x, y, width, align, lineGap, isHeader, nowrap, ctx }) {
+function cellRunGap(doc, styles, lineHeight, fontSize) {
+  const size = styleNumber(styles, 'font-size', fontSize);
+  const target = size > fontSize
+    ? Math.max(lineHeight, doc.currentLineHeight(true) + nativeLineGap(doc, styles, size, 'td'))
+    : lineHeight;
+  return target - doc.currentLineHeight(true);
+}
+
+function renderCellRuns(doc, runs, { x, y, width, align, lineHeight, fontSize, isHeader, nowrap, ctx }) {
   const lines = [[]];
   for (const run of runs) {
     if (run.isLineBreak) {
@@ -202,7 +210,7 @@ function renderCellRuns(doc, runs, { x, y, width, align, lineGap, isHeader, nowr
     doc.x = x;
     doc.y = cursorY;
     if (!line.length) {
-      doc.y += Math.max(1, lineGap || 0);
+      doc.y += lineHeight;
       cursorY = doc.y;
       continue;
     }
@@ -210,6 +218,8 @@ function renderCellRuns(doc, runs, { x, y, width, align, lineGap, isHeader, nowr
     const text = line.map((run) => run.text || '').join('');
     const firstRun = line.find((run) => run.text) || {};
     selectFontForInline(doc, firstRun.styles || {}, isHeader || !!firstRun.bold, !!firstRun.italic, null, text);
+    const lineGap = cellRunGap(doc, firstRun.styles || {}, lineHeight, fontSize);
+    const height = doc.heightOfString(text, { width, align, lineGap, lineBreak: !nowrap });
     const linkOpts = getRunLinkTextOptions(firstRun, {
       enableInternalAnchors: ctx?.options?.enableInternalAnchors,
     });
@@ -223,11 +233,11 @@ function renderCellRuns(doc, runs, { x, y, width, align, lineGap, isHeader, nowr
         ...linkOpts,
       });
 
-    cursorY = doc.y;
+    cursorY += height;
   }
 }
 
-function measureCellRuns(doc, runs, { width, align, lineGap, isHeader, nowrap }) {
+function measureCellRuns(doc, runs, { width, align, lineHeight, fontSize, isHeader, nowrap }) {
   const lines = [[]];
   for (const run of runs) {
     if (run.isLineBreak) {
@@ -240,13 +250,14 @@ function measureCellRuns(doc, runs, { width, align, lineGap, isHeader, nowrap })
   let total = 0;
   for (const line of lines) {
     if (!line.length) {
-      total += Math.max(1, lineGap || 0);
+      total += lineHeight;
       continue;
     }
 
     const text = line.map((run) => run.text || '').join('');
     const firstRun = line.find((run) => run.text) || {};
     selectFontForInline(doc, firstRun.styles || {}, isHeader || !!firstRun.bold, !!firstRun.italic, null, text);
+    const lineGap = cellRunGap(doc, firstRun.styles || {}, lineHeight, fontSize);
     total += doc.heightOfString(text, {
       width,
       align,
@@ -443,6 +454,9 @@ async function measureCellHeight(cell, ctx, spanWidth, cellPadding) {
   const padL = styleNumber(cellStyles, 'padding-left', cellPadding);
   const padR = styleNumber(cellStyles, 'padding-right', cellPadding);
   selectFontForInline(doc, cellStyles, isHeader, false, fs, text);
+  const lineHeight = cellStyles['line-height'] == null || String(cellStyles['line-height']).trim().toLowerCase() === 'normal'
+    ? doc.currentLineHeight(true) : lh;
+  const nativeGap = lineHeight - doc.currentLineHeight(true);
   const innerWidth = Math.max(1, spanWidth - padL - padR);
   const align = textAlign(cellStyles || {});
   const rawText = gatherPlainText(cell) || '';
@@ -457,11 +471,12 @@ async function measureCellHeight(cell, ctx, spanWidth, cellPadding) {
         ? measureCellRuns(doc, normalizedRuns, {
             width: innerWidth,
             align,
-            lineGap,
+            lineHeight,
+            fontSize: fs,
             isHeader,
             nowrap: isNowrap(cellStyles),
           })
-        : doc.heightOfString(text, { width: innerWidth, lineGap, lineBreak: !isNowrap(cellStyles) });
+        : doc.heightOfString(text, { width: innerWidth, lineGap: nativeGap, lineBreak: !isNowrap(cellStyles) });
   return h + padT + padB;
 }
 
@@ -504,6 +519,9 @@ async function drawCell(cell, ctx, { x, y, spanWidth, spanHeight, rowStyles, tab
   const lineGap = Math.max(0, lh - fs);
   const runs = inlineRuns(cell, cellStyles);
   const text = cellPlainText(cell, cellStyles) || '';
+  selectFontForInline(doc, cellStyles, isHeader, false, fs, text);
+  const lineHeight = cellStyles['line-height'] == null || String(cellStyles['line-height']).trim().toLowerCase() === 'normal'
+    ? doc.currentLineHeight(true) : lh;
   const rawText = gatherPlainText(cell) || '';
   const renderPlainText = text !== rawText || text.includes('\n') || isNowrap(cellStyles);
   const align = textAlign(cellStyles || {});
@@ -524,7 +542,8 @@ async function drawCell(cell, ctx, { x, y, spanWidth, spanHeight, rowStyles, tab
       y: y + padT,
       width: innerWidth,
       align,
-      lineGap,
+      lineHeight,
+      fontSize: fs,
       isHeader,
       nowrap: isNowrap(cellStyles),
       ctx,
@@ -540,7 +559,7 @@ async function drawCell(cell, ctx, { x, y, spanWidth, spanHeight, rowStyles, tab
       doc.fillColor(styleColor(run.styles || {}, 'color', '#000')).text(run.text, {
         width: innerWidth,
         align,
-        lineGap,
+        lineGap: lineHeight - doc.currentLineHeight(true),
         continued: true,
         ...linkOpts,
       });

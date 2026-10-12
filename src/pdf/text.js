@@ -73,6 +73,13 @@ function selectFontForInline(doc, styles, strong = false, italic = false, sizeOv
   doc.font(fontName).fontSize(size);
 }
 
+// PDFKit's native line height already includes the selected font's leading.
+function nativeLineGap(doc, styles, size, tag) {
+  const value = styles['line-height'];
+  if (value == null || String(value).trim().toLowerCase() === 'normal') return 0;
+  return lineHeightValue(styles, size, tag) - doc.currentLineHeight(true);
+}
+
 function inlineRuns(node, parentStyles = {}) {
   const runs = [];
 
@@ -166,4 +173,4 @@ function gatherPlainText(node) {
   return out;
 }
 
-module.exports = { selectFontForInline, inlineRuns, gatherPlainText };
+module.exports = { selectFontForInline, inlineRuns, gatherPlainText, nativeLineGap };

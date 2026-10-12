@@ -66,14 +66,20 @@ Local review of the current source (package version 1.2.4) with Chrome 148 found
 
 | Example | Lite / Chromium pages | Review |
 | --- | --- | --- |
-| Invoice | 1 / 1 | No visible text collisions; address frame widths now match, while vertical spacing differs. |
-| Report | 1 / 1 | Repeated KPI padding and excess mixed-style leading are fixed; default block spacing still differs. |
-| Register | 3 / 3 | All 50 accounts occur once and headers repeat; Lite page ranges are 1-17, 18-36, 37-50 versus Chromium's 1-19, 20-40, 41-50. |
+| Invoice | 1 / 1 | No visible text collisions; widths and vertical spacing are closer. Single-line cell vertical alignment still differs. |
+| Report | 1 / 1 | KPI padding and native paragraph/heading leading are corrected; small font and spacing differences remain. |
+| Register | 3 / 3 | All 50 accounts occur once, headers repeat, and both engines now produce page ranges 1-19, 20-40, 41-50. |
 
 The three diagnosed issues are covered by `test/box-model.test.js`: anonymous
 inline groups inherit typography, not the parent's box styles; explicit flex
 widths include content-box padding/borders but do not expand border-box widths;
 and mixed-style lines apply CSS line-height once. Invoice/report previews were
 regenerated and visually checked, without approving pixel-perfect baselines.
-Default block spacing and table pagination still depend on PDFKit font/line-height
-metrics; a matching total page count alone does not establish browser parity.
+Native heading/paragraph and table leading are also covered by
+`test/typography-metrics.test.js`: PDFKit font metrics are not counted twice,
+explicit line-height is respected, empty cell lines reserve full height, and
+tables have no implicit 1em margin. Normal line height uses the selected native
+font's metrics. This can change page breaks compared with earlier package output.
+Matching row ranges in these fixtures is not a browser-parity guarantee: font
+substitution, default cell vertical alignment and unsupported CSS still differ.
+Do not describe the renderer as generally pixel-identical to Chromium.
