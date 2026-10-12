@@ -2,6 +2,7 @@ const { styleNumber, styleColor, textAlign, lineHeightValue, parsePxWithOptions 
 const { inlineRuns, selectFontForInline, gatherPlainText, nativeLineGap } = require('../pdf/text');
 const { getRunLinkTextOptions } = require('../pdf/link');
 const { Layout } = require('../pdf/layout');
+const { INHERITABLE } = require('../read-html');
 
 function normalizePaint(val) {
   if (!val) return null;
@@ -86,6 +87,13 @@ function cellChildren(cell) {
     if (child.type === 'text') return /\S/.test(child.text || '');
     return child.type === 'element';
   });
+}
+
+function blockCellChildren(cell) {
+  const styles = Object.fromEntries(Object.entries(cell.styles || {}).filter(([property]) => INHERITABLE.has(property)));
+  return cellChildren(cell).map(child => child.type === 'text' ? {
+    type: 'element', tag: 'div', attrs: {}, styles, children: [child], _anonymous: true,
+  } : child);
 }
 
 function hasBlockCellContent(cell) {
@@ -335,7 +343,7 @@ function distributeFlexibleColumnWidths(preferred, minimum, totalWidth) {
 
 async function measureBlockCell(cell, ctx, x, width, top, bottomMargin) {
   const { doc } = ctx;
-  const children = cellChildren(cell);
+  const children = blockCellChildren(cell);
   if (!children.length) return 0;
   const { renderNode } = require('../pdf/render-node');
   const measureLayout = new Layout(doc, {
@@ -356,7 +364,7 @@ async function measureBlockCell(cell, ctx, x, width, top, bottomMargin) {
 
 async function renderBlockCell(cell, ctx, x, y, width, bottomMargin) {
   const { doc } = ctx;
-  const children = cellChildren(cell);
+  const children = blockCellChildren(cell);
   if (!children.length) return;
   const { renderNode } = require('../pdf/render-node');
   const cellLayout = new Layout(doc, {

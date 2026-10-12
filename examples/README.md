@@ -102,8 +102,9 @@ The register's reviewed ranges are pinned to 1-19, 20-40 and 41-50; changes in
 font/browser versions or template geometry require review, not automatic rebaselining.
 
 The new matrix passed content/page checks locally in both engines. Visual review
-still shows spacing and font-metric differences. In particular, the outer text
-labels in the nested-table fixture are larger in Lite than in Chromium; this is
-not accepted as a correct visual baseline. Small fixtures do not establish
+still shows spacing, column-width and font-metric differences. Outer text labels
+in nested cells now preserve inherited font size, family and weight; regression
+tests also check explicit descendant overrides. These outputs are not accepted
+as pixel-identical visual baselines. Small fixtures do not establish
 correctness for oversized rows, nested-table pagination or a framed block that
 crosses a page boundary.

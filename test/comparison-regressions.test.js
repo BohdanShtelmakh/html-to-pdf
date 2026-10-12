@@ -31,7 +31,7 @@ async function run() {
     return originalAddPage.apply(this, args);
   };
   PDFDocument.prototype._fragment = function (text, ...args) {
-    emitted.push({ page: this._comparisonPage, text: String(text) });
+    emitted.push({ page: this._comparisonPage, text: String(text), size: this._fontSize, font: this._font.name });
     return originalFragment.call(this, text, ...args);
   };
   try {
@@ -45,7 +45,28 @@ async function run() {
       const text = Array.from({ length: pages }, (_, i) => emitted.filter(entry => entry.page === i + 1)
         .map(entry => entry.text).join(' ')).join('\f');
       assert.deepStrictEqual(validateResult(fixture, { text, pages }), [], `${fixture.name}: emitted content/pagination regression`);
+      if (fixture.name === 'nested-tables') {
+        for (const label of ['NorthRegion', 'SouthRegion']) {
+          const fragment = emitted.find(entry => entry.text.trim() === label);
+          assert.ok(fragment, `${label}: missing label`);
+          assert.strictEqual(fragment.size, 9.75, `${label}: inherit the cell font size`);
+          assert.strictEqual(fragment.font, 'Helvetica', `${label}: inherit the cell font family`);
+        }
+      }
     }
+    emitted = [];
+    await renderPdfFromHtml('<table><tr><td style="font-family: Helvetica; font-size: 10px; font-weight: bold">InheritedLabel<table><tr><td><span style="font-size: 18px; font-weight: normal">OverrideLabel</span></td></tr></table></td></tr></table>', {
+      autoResolveFonts: false, autoResolveEmojiFont: false, autoDownloadEmojiFont: false,
+      allowScripts: false, fetchExternalCss: false,
+    });
+    const inherited = emitted.find(entry => entry.text.trim() === 'InheritedLabel');
+    const override = emitted.find(entry => entry.text.trim() === 'OverrideLabel');
+    assert.ok(inherited);
+    assert.ok(override);
+    assert.strictEqual(inherited.size, 7.5);
+    assert.strictEqual(inherited.font, 'Helvetica-Bold');
+    assert.strictEqual(override.size, 13.5);
+    assert.strictEqual(override.font, 'Helvetica');
   } finally {
     PDFDocument.prototype.addPage = originalAddPage;
     PDFDocument.prototype._fragment = originalFragment;
