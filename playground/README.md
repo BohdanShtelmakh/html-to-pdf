@@ -24,7 +24,32 @@ package's full font/image support.
 npm run test:playground
 ```
 
-## Later Deployment
+## Local Container Check
+
+With Docker Desktop running (the container uses port 4180, separate from the
+native playground on port 4173):
+
+```sh
+docker compose -f playground/compose.yml up --build -d
+PLAYGROUND_URL=http://127.0.0.1:4180 node playground/load-test.cjs
+docker compose -f playground/compose.yml stats --no-stream
+docker compose -f playground/compose.yml down
+```
+
+This creates the renderer and a small fixed-upstream gateway, with no
+host data volumes. The published port binds to loopback. Total container memory
+is limited to 384 MiB, swap is disabled, CPU is limited to 0.5, and the filesystem
+is read-only. The renderer's runtime network is internal (no Internet access).
+The gateway publishes loopback port 4180 and has separate 64 MiB / 0.1 CPU
+limits; it forwards only to the renderer, not arbitrary destinations.
+The image build downloads dependencies; the runtime does not.
+
+The test performs 30 sequential renders, an eight-request burst (excess requests
+must return 429), then a recovery render. Worker RSS is not whole-container RAM:
+sample `docker stats` during the test and check `docker inspect` for OOM kills.
+On macOS, Docker Desktop VM memory is additional to container memory.
+
+## Public Deployment (Deferred)
 
 This version deliberately binds only to loopback and has no deployment workflow.
 Do not expose it by changing the bind address alone. Before public deployment:

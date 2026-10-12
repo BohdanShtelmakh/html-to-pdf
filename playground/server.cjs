@@ -78,6 +78,7 @@ if (require.main === module) {
   const server = createServer();
   server.requestTimeout = 15000;
   server.headersTimeout = 10000;
-  server.listen(Number(process.env.PORT || 4173), '127.0.0.1', () => console.log(`Playground: http://127.0.0.1:${server.address().port}`));
+  const host = process.env.PLAYGROUND_CONTAINER === '1' ? '0.0.0.0' : '127.0.0.1';
+  server.listen(Number(process.env.PORT || 4173), host, () => console.log(`Playground: http://127.0.0.1:${server.address().port}`));
 }
 module.exports = { createServer };

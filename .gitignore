@@ -10,6 +10,7 @@ node_modules/
 # Generated assets
 *.pdf
 *.html
+!playground/index.html
 *.tgz
 debug-inline.svg
 test.js

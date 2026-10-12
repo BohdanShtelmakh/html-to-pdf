@@ -1,0 +1,43 @@
+services:
+  playground:
+    build:
+      context: ..
+      dockerfile: playground/Dockerfile
+    environment:
+      PORT: "4180"
+    mem_limit: 384m
+    memswap_limit: 384m
+    cpus: 0.5
+    pids_limit: 64
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=16m,mode=1777,noexec,nosuid
+    networks:
+      - isolated
+  gateway:
+    image: playground-playground
+    command: ["node", "playground/proxy.cjs"]
+    depends_on:
+      - playground
+    ports:
+      - "127.0.0.1:4180:4180"
+    mem_limit: 64m
+    memswap_limit: 64m
+    cpus: 0.1
+    pids_limit: 32
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - isolated
+      - ingress
+networks:
+  isolated:
+    internal: true
+  ingress:

@@ -10,3 +10,6 @@ test.js
 tmp
 temp
 cache
+playground/
+bench/
+.dockerignore
