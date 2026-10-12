@@ -324,7 +324,7 @@ function renderInlineRuns(runs, ctx, { baseStyles, align, lineGap, tag }) {
     const textWidth = emojiInfo
       ? doc._emoji.advanceWidth(emojiInfo, size) + emojiLeadW + emojiTrailW
       : doc.widthOfString(text, { characterSpacing: letterSpacing }) + wordSpacing * spaces.length;
-    const measuredTextHeight = emojiInfo ? size : doc.currentLineHeight(true);
+    const measuredTextHeight = emojiInfo ? size : doc.currentLineHeight(false);
     const textHeight = measuredTextHeight;
     const runLineHeight = lineHeightValue(s, size, tag);
     const contentH = runLineHeight;
@@ -1027,7 +1027,7 @@ async function renderNodeImpl(node, ctx) {
     const explicitLeading = styles['line-height'] != null &&
       String(styles['line-height']).trim().toLowerCase() !== 'normal';
     const textOffset = !renderRunsAsGroup && explicitLeading
-      ? Math.max(0, gap / 2) : 0;
+      ? Math.max(0, (lineHeightValue(styles, size, tag) - doc.currentLineHeight(false)) / 2) : 0;
     if (!measureOnly) doc.y = startY + paddingTop + textOffset;
 
     if (!measureOnly && !useInlineBoxes) {
@@ -1189,6 +1189,8 @@ async function renderNodeImpl(node, ctx) {
     const prepaint = !measureOnly && hasFrame;
     const inlineOnly = isInlineOnly(node);
     let skippedPagedFrame = false;
+    const frameStartPage = doc.bufferedPageRange().start + doc.bufferedPageRange().count - 1;
+    const previousBufferPages = doc.options.bufferPages;
 
     if (prepaint && (node.children || []).length) {
       const debug = process.env.HTML_TO_PDF_DEBUG === '1';
@@ -1288,6 +1290,7 @@ async function renderNodeImpl(node, ctx) {
       const desiredBoxH = Math.max(boxH, minimumOuterHeight);
       const availableOnPage = doc.page.height - layout.marginBottom - startY;
       skippedPagedFrame = desiredBoxH > availableOnPage;
+      if (skippedPagedFrame && !bg) doc.options.bufferPages = true;
       if (desiredBoxH > 0 && !skippedPagedFrame) {
         drawBox(doc, blockX, startY, blockWidth, desiredBoxH, {
           bg,
@@ -1306,7 +1309,11 @@ async function renderNodeImpl(node, ctx) {
 
     const originalX = layout.x;
     const originalContentWidth = layout.contentWidth;
+    const originalMarginLeft = layout.marginLeft;
+    const originalMarginRight = layout.marginRight;
     layout.x = contentX;
+    layout.marginLeft = contentX;
+    layout.marginRight = doc.page.width - contentX - contentWidth;
     layout.contentWidth = () => contentWidth;
 
     if (isFlex || isGrid) {
@@ -1491,6 +1498,8 @@ async function renderNodeImpl(node, ctx) {
 
     layout.contentWidth = originalContentWidth;
     layout.x = originalX;
+    layout.marginLeft = originalMarginLeft;
+    layout.marginRight = originalMarginRight;
 
     if (layout.pendingBottomMargin) {
       layout.cursorToNextLine(layout.pendingBottomMargin);
@@ -1516,6 +1525,21 @@ async function renderNodeImpl(node, ctx) {
       });
     }
     const boxH = Math.max(endY - startY + paddingBottom + borderBottom.width, desiredBoxH);
+    if (skippedPagedFrame && !bg && !measureOnly) {
+      const lastPage = doc.bufferedPageRange().start + doc.bufferedPageRange().count - 1;
+      for (let page = frameStartPage; page <= lastPage; page++) {
+        doc.switchToPage(page);
+        const top = page === frameStartPage ? startY : doc.page.margins.top;
+        const bottom = page === lastPage ? endY + paddingBottom + borderBottom.width : doc.page.height - layout.marginBottom;
+        drawBox(doc, blockX, top, blockWidth, Math.max(0, bottom - top), {
+          bg: null, borderLeft, borderRight,
+          borderTop: page === frameStartPage ? borderTop : { width: 0, color: null },
+          borderBottom: page === lastPage ? borderBottom : { width: 0, color: null }, radius: 0,
+        });
+      }
+      doc.switchToPage(lastPage);
+      doc.options.bufferPages = previousBufferPages;
+    }
 
     if (
       !measureOnly &&

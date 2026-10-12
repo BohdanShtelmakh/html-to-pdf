@@ -3,6 +3,7 @@ const { inlineRuns, selectFontForInline, gatherPlainText, nativeLineGap } = requ
 const { getRunLinkTextOptions } = require('../pdf/link');
 const { Layout } = require('../pdf/layout');
 const { INHERITABLE } = require('../read-html');
+const { drawBox } = require('../pdf/draw-box');
 
 function normalizePaint(val) {
   if (!val) return null;
@@ -228,6 +229,13 @@ function renderCellRuns(doc, runs, { x, y, width, align, lineHeight, fontSize, i
     selectFontForInline(doc, firstRun.styles || {}, isHeader || !!firstRun.bold, !!firstRun.italic, null, text);
     const lineGap = cellRunGap(doc, firstRun.styles || {}, lineHeight, fontSize);
     const height = doc.heightOfString(text, { width, align, lineGap, lineBreak: !nowrap });
+    if (cursorY + height > doc.page.height - ctx.layout.marginBottom) {
+      doc.addPage();
+      cursorY = doc.page.margins.top;
+      doc.x = x;
+      doc.y = cursorY;
+    }
+    const startPage = doc.page;
     const linkOpts = getRunLinkTextOptions(firstRun, {
       enableInternalAnchors: ctx?.options?.enableInternalAnchors,
     });
@@ -241,8 +249,9 @@ function renderCellRuns(doc, runs, { x, y, width, align, lineHeight, fontSize, i
         ...linkOpts,
       });
 
-    cursorY += height;
+    cursorY = doc.page === startPage ? cursorY + height : doc.y;
   }
+  return cursorY;
 }
 
 function measureCellRuns(doc, runs, { width, align, lineHeight, fontSize, isHeader, nowrap }) {
@@ -431,6 +440,7 @@ async function renderBlockCell(cell, ctx, x, y, width, bottomMargin) {
   for (const child of children) {
     await renderNode(child, { doc, layout: cellLayout, options: ctx.options });
   }
+  return cellLayout.y;
 }
 
 // Header cells are bold by default; force bold on the non-emoji runs so the
@@ -542,7 +552,7 @@ async function measureCellHeight(cell, ctx, spanWidth, cellPadding) {
 }
 
 // Draw a single cell (background, border, content) at the given rectangle.
-async function drawCell(cell, ctx, { x, y, spanWidth, spanHeight, rowStyles, tableStyles, cellPadding }) {
+async function drawCell(cell, ctx, { x, y, spanWidth, spanHeight, rowStyles, tableStyles, cellPadding, skipPaint = false, paintOnly = false, skipBackground = false, fragmentTop = true, fragmentBottom = true }) {
   const { doc, layout } = ctx;
   const cellStyles = cell.styles || {};
   const bg = resolveBackground(cellStyles, rowStyles, tableStyles);
@@ -551,18 +561,25 @@ async function drawCell(cell, ctx, { x, y, spanWidth, spanHeight, rowStyles, tab
     rowStyles,
     tableStyles
   );
-  if (bg) {
+  if (bg && !skipPaint && !skipBackground) {
     doc.save().rect(x, y, spanWidth, spanHeight).fill(bg).restore();
   }
-  if (borderWidth > 0) {
-    doc
-      .save()
-      .lineWidth(borderWidth)
-      .strokeColor(borderColor || '#000')
-      .rect(x, y, spanWidth, spanHeight)
-      .stroke()
-      .restore();
-  } else if (borderBottomWidth > 0) {
+  if (borderWidth > 0 && !skipPaint) {
+    if (!fragmentTop || !fragmentBottom) {
+      const border = { width: borderWidth, color: borderColor || '#000' };
+      drawBox(doc, x, y, spanWidth, spanHeight, { bg: null, borderLeft: border, borderRight: border,
+        borderTop: fragmentTop ? border : { width: 0, color: null },
+        borderBottom: fragmentBottom ? border : { width: 0, color: null }, radius: 0 });
+    } else {
+      doc
+        .save()
+        .lineWidth(borderWidth)
+        .strokeColor(borderColor || '#000')
+        .rect(x, y, spanWidth, spanHeight)
+        .stroke()
+        .restore();
+    }
+  } else if (borderBottomWidth > 0 && !skipPaint) {
     doc.save().lineWidth(borderBottomWidth).strokeColor(borderBottomColor || '#000');
     if (borderBottomStyle === 'dashed') {
       doc.dash(borderBottomWidth * 2, { space: borderBottomWidth * 2 });
@@ -573,6 +590,7 @@ async function drawCell(cell, ctx, { x, y, spanWidth, spanHeight, rowStyles, tab
     doc.moveTo(x, lineY).lineTo(x + spanWidth, lineY).stroke();
     doc.undash().restore();
   }
+  if (paintOnly) return;
 
   const isHeader = cell.tag === 'th';
   const fs = styleNumber(cellStyles, 'font-size', isHeader ? 12.5 : 12);
@@ -587,6 +605,7 @@ async function drawCell(cell, ctx, { x, y, spanWidth, spanHeight, rowStyles, tab
   const renderPlainText = text !== rawText || text.includes('\n') || isNowrap(cellStyles);
   const align = textAlign(cellStyles || {});
   const padT = styleNumber(cellStyles, 'padding-top', cellPadding);
+  const padB = styleNumber(cellStyles, 'padding-bottom', cellPadding);
   const padL = styleNumber(cellStyles, 'padding-left', cellPadding);
   const padR = styleNumber(cellStyles, 'padding-right', cellPadding);
 
@@ -602,12 +621,13 @@ async function drawCell(cell, ctx, { x, y, spanWidth, spanHeight, rowStyles, tab
   }
   const contentY = y + borderWidth / 2 + padT + offsetY;
   const contentX = x + borderWidth / 2 + padL;
+  let endY;
   if (hasBlockCellContent(cell)) {
-    await renderBlockCell(cell, ctx, contentX, contentY, innerWidth, layout.marginBottom);
+    endY = await renderBlockCell(cell, ctx, contentX, contentY, innerWidth, layout.marginBottom);
   } else if (cellHasEmoji) {
     drawEmojiCell(ctx, normalized, cellStyles, isHeader, contentX, contentY, innerWidth, align, lineGap, cell.tag);
   } else if (renderPlainText) {
-    renderCellRuns(doc, normalized, {
+    endY = renderCellRuns(doc, normalized, {
       x: contentX,
       y: contentY,
       width: innerWidth,
@@ -636,6 +656,7 @@ async function drawCell(cell, ctx, { x, y, spanWidth, spanHeight, rowStyles, tab
     }
     doc.text('', { continued: false });
   }
+  return { y: (endY ?? doc.y) + padB + borderWidth / 2, page: doc.page };
 }
 
 async function renderTable(node, ctx, tableStyles = {}) {
@@ -671,18 +692,19 @@ async function renderTable(node, ctx, tableStyles = {}) {
       const fs = styleNumber(cellStyles, 'font-size', isHeader ? 12.5 : 12);
       const padL = styleNumber(cellStyles, 'padding-left', cellPadding);
       const padR = styleNumber(cellStyles, 'padding-right', cellPadding);
+      const border = resolveBorder(cellStyles, {}, {}).borderWidth;
       const explicitWidth = cellExplicitWidth(cell, contentWidth, fs);
       const explicitMinWidth = cellMinWidth(cell, contentWidth, fs);
       selectFontForInline(doc, cellStyles, isHeader, false, fs, text);
       const intrinsic = hasBlockCellContent(cell) ? intrinsicWidths(cell, doc) : null;
       const measured = hasBlockCellContent(cell)
-        ? Math.min(intrinsic.preferred - padL - padR, contentWidth)
+        ? Math.min(intrinsic.preferred - padL - padR - border, contentWidth)
         : Math.min(doc.widthOfString(text), contentWidth);
-      const tokenWidth = intrinsic ? intrinsic.minimum - padL - padR :
+      const tokenWidth = intrinsic ? intrinsic.minimum - padL - padR - border :
         isNowrap(cellStyles) ? measured : measureTokenWidth(doc, text, cellStyles, isHeader, fs);
-      const needed = measured + padL + padR;
+      const needed = measured + padL + padR + border;
       const cssMinNeeded = explicitMinWidth != null ? explicitMinWidth : 0;
-      const minNeeded = Math.min(Math.max(tokenWidth + padL + padR, cssMinNeeded), contentWidth);
+      const minNeeded = Math.min(Math.max(tokenWidth + padL + padR + border, cssMinNeeded), contentWidth);
       const target = explicitWidth != null ? explicitWidth : needed;
       const perCol = target / colspan;
       const minPerCol = minNeeded / colspan;
@@ -760,7 +782,8 @@ async function renderTable(node, ctx, tableStyles = {}) {
 
     const pageBefore = doc.bufferedPageRange ? doc.bufferedPageRange().count : null;
     const yBefore = layout.y;
-    layout.ensureSpace(rowH + ENSURE_PAD);
+    const oversized = rowH > doc.page.height - layout.marginTop - layout.marginBottom;
+    if (!oversized) layout.ensureSpace(rowH + ENSURE_PAD);
     const brokeToNewPage = layout.y < yBefore || (pageBefore != null && doc.bufferedPageRange().count !== pageBefore);
 
     // Repeat the header at the top of each continuation page (skip the header
@@ -772,27 +795,75 @@ async function renderTable(node, ctx, tableStyles = {}) {
       layout.ensureSpace(rowH + ENSURE_PAD);
     }
 
-    for (const p of placements[r]) {
-      const spanWidth = spanWidthOf(p.colStart, p.colspan);
-      const x = layout.x + colWidths.slice(0, p.colStart).reduce((a, b) => a + b, 0);
-      const y = layout.y;
+    const rowStartPage = doc.page;
+    const rowStartIndex = doc.bufferedPageRange().start + doc._pageBuffer.indexOf(doc.page);
+    const rowStartY = layout.y;
+    const previousBufferPages = doc.options.bufferPages;
+    const originalAddPage = doc.addPage;
+    if (oversized) doc.options.bufferPages = true;
+    if (oversized) doc.addPage = function (...args) {
+      const range = this.bufferedPageRange();
+      const current = range.start + this._pageBuffer.indexOf(this.page);
+      if (current + 1 < range.start + range.count) {
+        this.switchToPage(current + 1);
+        this.x = this.page.margins.left;
+        this.y = this.page.margins.top;
+        return this;
+      }
+      return originalAddPage.apply(this, args);
+    };
+    let paginatedEnd = null;
+    let lastIndex = rowStartIndex;
+    try {
+      for (const p of placements[r]) {
+        if (oversized) doc.switchToPage(rowStartIndex);
+        const spanWidth = spanWidthOf(p.colStart, p.colspan);
+        const x = layout.x + colWidths.slice(0, p.colStart).reduce((a, b) => a + b, 0);
+        const y = layout.y;
 
-      // Compute the spanning height. If the span crosses a page break (a later
-      // covered row landed on a different page), clamp it to this row only so
-      // nothing overlaps onto the next page.
-      const lastRow = Math.min(rows.length - 1, r + p.rowspan - 1);
-      let spanHeight = rowH;
-      if (p.rowspan > 1) {
-        spanHeight = (lastRow - r) * ROW_GAP;
-        for (let rr = r; rr <= lastRow; rr++) spanHeight += rowHeights[rr];
-        const bottom = doc.page.height - layout.marginBottom;
-        if (y + spanHeight > bottom) spanHeight = rowH; // would cross a page edge
+        // Compute the spanning height. If the span crosses a page break (a later
+        // covered row landed on a different page), clamp it to this row only so
+        // nothing overlaps onto the next page.
+        const lastRow = Math.min(rows.length - 1, r + p.rowspan - 1);
+        let spanHeight = rowH;
+        if (p.rowspan > 1) {
+          spanHeight = (lastRow - r) * ROW_GAP;
+          for (let rr = r; rr <= lastRow; rr++) spanHeight += rowHeights[rr];
+          const bottom = doc.page.height - layout.marginBottom;
+          if (y + spanHeight > bottom) spanHeight = rowH; // would cross a page edge
+        }
+
+        const end = await drawCell(p.cell, ctx, { x, y, spanWidth, spanHeight, rowStyles, tableStyles, cellPadding, skipPaint: oversized });
+        const index = doc.bufferedPageRange().start + doc._pageBuffer.indexOf(end.page);
+        if (end.page !== rowStartPage && (index > lastIndex ||
+          (index === lastIndex && (!paginatedEnd || end.y > paginatedEnd.y)))) {
+          paginatedEnd = end;
+          lastIndex = index;
+        }
       }
 
-      await drawCell(p.cell, ctx, { x, y, spanWidth, spanHeight, rowStyles, tableStyles, cellPadding });
+      if (paginatedEnd) layout.y = paginatedEnd.y;
+      else layout.cursorToNextLine(rowH + ROW_GAP);
+      if (oversized) {
+        for (let page = rowStartIndex; page <= lastIndex; page++) {
+          doc.switchToPage(page);
+          const top = page === rowStartIndex ? rowStartY : doc.page.margins.top;
+          const bottom = page === lastIndex ? layout.y : doc.page.height - layout.marginBottom;
+          for (const p of placements[r]) {
+            const x = layout.x + colWidths.slice(0, p.colStart).reduce((sum, width) => sum + width, 0);
+            await drawCell(p.cell, ctx, { x, y: top, spanWidth: spanWidthOf(p.colStart, p.colspan),
+              spanHeight: Math.max(0, bottom - top), rowStyles, tableStyles, cellPadding, paintOnly: true, skipBackground: true,
+              fragmentTop: page === rowStartIndex, fragmentBottom: page === lastIndex });
+          }
+        }
+        doc.switchToPage(lastIndex);
+      }
+    } finally {
+      if (oversized) {
+        doc.addPage = originalAddPage;
+        doc.options.bufferPages = previousBufferPages;
+      }
     }
-
-    layout.cursorToNextLine(rowH + ROW_GAP);
     layout.atStartOfPage = false;
   }
 }

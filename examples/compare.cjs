@@ -67,7 +67,7 @@ async function main() {
       const originalRect = PDFDocument.prototype.rect;
       if (chromiumColumns || chromiumFrame || name === 'stress-framed-block') PDFDocument.prototype.rect = function (x, y, width, height) {
         const range = this.bufferedPageRange();
-        rectangles.push({ x, y, width, height, page: range.start + range.count });
+        rectangles.push({ x, y, width, height, page: range.start + this._pageBuffer.indexOf(this.page) + 1 });
         return originalRect.call(this, x, y, width, height);
       };
       let litePdf;

@@ -10,7 +10,7 @@ async function capture(html) {
   const originalRect = PDFDocument.prototype.rect;
   PDFDocument.prototype.text = function (value, x, y, options) {
     text.push({ value: String(value), x: typeof x === 'number' ? x : this.x,
-      y: typeof y === 'number' ? y : this.y, font: this._font.name, nativeHeight: this.currentLineHeight(true) });
+      y: typeof y === 'number' ? y : this.y, font: this._font.name, nativeHeight: this.currentLineHeight(false) });
     return originalText.call(this, value, x, y, options);
   };
   PDFDocument.prototype.rect = function (x, y, width, height) {

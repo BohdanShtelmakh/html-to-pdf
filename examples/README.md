@@ -112,9 +112,9 @@ assuming equal shares of the available parent width.
 Visual review still shows spacing, column-width and font-metric differences. Outer text labels
 in nested cells now preserve inherited font size, family and weight; regression
 tests also check explicit descendant overrides. These outputs are not accepted
-as pixel-identical visual baselines. Small fixtures do not establish
-correctness for oversized rows, nested-table pagination or a framed block that
-crosses a page boundary.
+as pixel-identical visual baselines. Dedicated stress fixtures cover oversized
+rows, nested-table pagination and an unfilled frame crossing page boundaries;
+they do not establish general browser-compatible fragmentation.
 
 ### Geometry And Stress Checks
 
@@ -122,10 +122,9 @@ crosses a page boundary.
 two description lines (1.5pt tolerance), the long-word and mixed-style frame
 heights (3px tolerance), and the text-to-frame gap after the long-word block
 (1.5pt tolerance). These are explicit geometry tolerances, not pixel equality.
-The new text-to-frame check currently fails: the long-word fixture's gap differs
-by approximately 2.06pt. Amount alignment and both frame-height checks pass. The
-normal comparison therefore returns a nonzero exit code until the gap is fixed;
-the tolerance has not been increased to hide the finding.
+The text-to-frame gap now differs by approximately 0.93pt and passes the unchanged
+1.5pt tolerance. Glyph centering excludes the font's internal leading while line
+advance retains it. Amount alignment and both frame-height checks also pass.
 
 Run `npm run examples:stress` separately for an oversized table row, a paginated
 nested table and a multi-page framed block. Outputs go to
@@ -133,7 +132,13 @@ nested table and a multi-page framed block. Outputs go to
 returns a failure for missing markers, empty pages, page-count differences from
 Chromium or missing Lite frame fragments. It does not approve those outputs.
 
-Current stress findings: the oversized row produces 4 pages versus Chromium's 2;
-the nested table produces 4 versus 3, and both have an empty first page. The framed
-block has 3 pages in both engines but its frame is missing on all Lite pages.
-These remain open renderer limitations, not accepted baselines.
+The reviewed fixtures now match Chromium's page counts: 2 for the oversized row,
+3 for the nested table and 3 for the framed block, with no empty first page or
+missing frame fragments. Tests check the following paragraph, a companion cell
+on the first page, text within page margins, and two tall cells sharing the same
+continuation pages. Page buffering is scoped to a fragmented row or unfilled
+frame so previous pages can be decorated before they are flushed.
+
+Colored backgrounds spanning pages, oversized rowspans and complex mixed-content
+fragmentation are not covered by these fixtures. No pixel-identical baseline is
+claimed for the stress outputs.

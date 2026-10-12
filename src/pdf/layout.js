@@ -19,6 +19,7 @@ class Layout {
     if (this.measureOnly) return;
     const bottom = this.doc.page.height - this.marginBottom;
     if (this.y + h <= bottom) return;
+    if (this.atStartOfPage && h > bottom - this.marginTop) return;
     this.doc.addPage();
     this.x = this.marginLeft;
     this.y = this.marginTop;
@@ -37,6 +38,7 @@ class Layout {
     this.pendingBottomMargin = 0;
     return () => {
       this.pendingBottomMargin = mb;
+      this.atStartOfPage = false;
     };
   }
 }
