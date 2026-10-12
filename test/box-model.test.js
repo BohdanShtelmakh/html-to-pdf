@@ -27,6 +27,36 @@ async function capture(html) {
 }
 
 async function run() {
+  const intrinsicDoc = new PDFDocument({ autoFirstPage: false });
+  const styles = { 'font-family': 'Helvetica', 'font-size': '10pt', padding: '4px' };
+  const cell = text => ({ type: 'element', tag: 'td', styles, children: [{ type: 'text', text }] });
+  const table = cells => ({ type: 'element', tag: 'table', children: [{ type: 'element', tag: 'tbody',
+    children: [{ type: 'element', tag: 'tr', children: cells }] }] });
+  const nested = table([cell('Wide column with several words'), cell('X')]);
+  const widths = _tableInternals.intrinsicWidths(nested, intrinsicDoc);
+  const first = _tableInternals.intrinsicWidths(nested.children[0].children[0].children[0], intrinsicDoc);
+  const second = _tableInternals.intrinsicWidths(cell('X'), intrinsicDoc);
+  assert.ok(Math.abs(widths.preferred - first.preferred - second.preferred) < 0.01,
+    'nested preferred width must be the sum of intrinsic column widths');
+  assert.ok(widths.minimum < widths.preferred, 'wrappable content must have a smaller minimum width');
+  const nowrap = cell('Words must stay together');
+  nowrap.styles = { ...styles, 'white-space': 'nowrap' };
+  const nowrapWidths = _tableInternals.intrinsicWidths(nowrap, intrinsicDoc);
+  assert.strictEqual(nowrapWidths.minimum, nowrapWidths.preferred, 'nowrap content must not acquire a smaller wrapping minimum');
+  assert.deepStrictEqual(_tableInternals.intrinsicWidths(table([]), intrinsicDoc), { minimum: 0, preferred: 0 },
+    'empty nested tables must not produce invalid intrinsic widths');
+  const outer = cell('');
+  outer.children = [{ type: 'text', text: 'Label' }, nested];
+  const outerWidths = _tableInternals.intrinsicWidths(outer, intrinsicDoc);
+  assert.ok(Math.abs(outerWidths.preferred - widths.preferred - 6) < 0.01,
+    'outer cell must preserve nested width plus its own padding');
+  const asymmetric = await capture(`<body style="font-family:Helvetica;font-size:10pt"><table style="width:400px">
+    <tr><td style="border:1px solid black"><table><tr><td>Wide column with several words</td><td>X</td></tr></table></td>
+    <td style="border:1px solid black"><table><tr><td>A</td><td>B</td></tr></table></td></tr></table></body>`);
+  const outerRects = asymmetric.rectangles.filter(rect => rect.height > 20);
+  assert.ok(outerRects.length >= 2 && outerRects[0].width > outerRects[1].width * 2,
+    'outer column allocation must reflect asymmetric nested content, not equal shares');
+  intrinsicDoc.end();
   assert.deepStrictEqual(_tableInternals.distributeColumnWidths([60, 40], [20, 20], 200), [120, 80],
     'auto columns distribute excess width in proportion to their preferred widths');
   const aligned = {};

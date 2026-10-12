@@ -4,6 +4,7 @@ const os = require('os');
 const crypto = require('crypto');
 const { execFileSync, spawnSync } = require('child_process');
 const puppeteer = require('puppeteer');
+const PDFDocument = require('pdfkit');
 const { renderPdfFromHtml } = require('../src');
 const { loadComparisonCases } = require('./comparison-cases.cjs');
 const { rowsByPage, validateResult } = require('./comparison-checks.cjs');
@@ -38,20 +39,49 @@ async function main() {
       const { name, html, markers } = spec;
       const page = await browser.newPage();
       let chromiumPdf;
+      let chromiumColumns;
       try {
+        if (name === 'nested-tables') await page.setViewport({ width: 730, height: 1000 });
         await page.setJavaScriptEnabled(false);
         await page.setContent(html, { waitUntil: 'load' });
         await page.evaluate(() => document.fonts.ready);
+        if (name === 'nested-tables') chromiumColumns = await page.evaluate(() =>
+          [...document.querySelectorAll('table')].map(table => {
+            const widths = [...table.rows[0].cells].map(cell => cell.getBoundingClientRect().width);
+            const total = widths.reduce((sum, width) => sum + width, 0);
+            return widths.map(width => width / total);
+          }));
         chromiumPdf = await page.pdf({ format: 'A4', preferCSSPageSize: true, printBackground: true });
       } finally {
         await page.close();
       }
-      const litePdf = await renderPdfFromHtml(html, {
+      const rectangles = [];
+      const originalRect = PDFDocument.prototype.rect;
+      if (chromiumColumns) PDFDocument.prototype.rect = function (x, y, width, height) {
+        rectangles.push({ x, y, width, height });
+        return originalRect.call(this, x, y, width, height);
+      };
+      let litePdf;
+      try { litePdf = await renderPdfFromHtml(html, {
         autoResolveFonts: false, autoResolveEmojiFont: false, autoDownloadEmojiFont: false,
         allowScripts: false, fetchExternalCss: false,
-      });
+      }); } finally { PDFDocument.prototype.rect = originalRect; }
       const example = { name, htmlSha256: crypto.createHash('sha256').update(html).digest('hex'),
         expected: { pages: spec.expectedPages, rowsByPage: spec.expectedRowsByPage, pageMarkers: spec.pageMarkers }, engines: {} };
+      if (chromiumColumns) {
+        if (rectangles.length !== 10) throw new Error('Nested-table geometry capture changed; review required');
+        const liteColumns = [[0, 5], [1, 2], [6, 7]].map(indices => {
+          const widths = indices.map(index => rectangles[index].width);
+          return widths.map(width => width / widths.reduce((sum, value) => sum + value, 0));
+        });
+        const maxDifference = Math.max(...liteColumns.flatMap((columns, table) =>
+          columns.map((share, col) => Math.abs(share - chromiumColumns[table][col]))));
+        example.columnGeometry = { lite: liteColumns, chromium: chromiumColumns, maxDifference, tolerance: 0.008 };
+        if (maxDifference > 0.008) {
+          console.error('Nested-table column proportions differ beyond the reviewed tolerance');
+          process.exitCode = 1;
+        }
+      }
       for (const [engine, pdf] of Object.entries({ lite: litePdf, chromium: chromiumPdf })) {
         const directory = path.join(output, engine);
         fs.mkdirSync(directory, { recursive: true });

@@ -303,6 +303,58 @@ function measureTokenWidth(doc, text, styles, bold, fontSize) {
   return max;
 }
 
+// Intrinsic sizes must not depend on an arbitrarily allocated parent column.
+function intrinsicWidths(node, doc, inheritedStyles = {}) {
+  const styles = node.styles || inheritedStyles;
+  const size = styleNumber(styles, 'font-size', 12);
+  if (node.tag === 'table') {
+    const rows = (node.children || []).flatMap(child => child.tag === 'tr' ? [child] :
+      ['thead', 'tbody', 'tfoot'].includes(child.tag) ? (child.children || []).filter(row => row.tag === 'tr') : []);
+    const { placements, cols } = buildGrid(rows);
+    const preferred = Array(cols).fill(0);
+    const minimum = Array(cols).fill(0);
+    for (const row of placements) {
+      for (const placement of row) {
+        const widths = intrinsicWidths(placement.cell, doc, styles);
+        for (let i = 0; i < placement.colspan; i++) {
+          const col = placement.colStart + i;
+          preferred[col] = Math.max(preferred[col], widths.preferred / placement.colspan);
+          minimum[col] = Math.max(minimum[col], widths.minimum / placement.colspan);
+        }
+      }
+    }
+    return { preferred: preferred.reduce((sum, width) => sum + width, 0),
+      minimum: minimum.reduce((sum, width) => sum + width, 0) };
+  }
+  let preferred = 0;
+  let minimum = 0;
+  if (hasBlockCellContent(node)) {
+    for (const child of cellChildren(node)) {
+      const widths = intrinsicWidths(child, doc, styles);
+      preferred = Math.max(preferred, widths.preferred);
+      minimum = Math.max(minimum, widths.minimum);
+    }
+  } else {
+    const runs = node.type === 'text' ? [{ text: node.text || '', styles }] :
+      normalizeCellRuns(inlineRuns(node, styles), styles);
+    let lineWidth = 0;
+    for (const run of runs) {
+      if (run.isLineBreak) { preferred = Math.max(preferred, lineWidth); lineWidth = 0; continue; }
+      const runStyles = { ...styles, ...(run.styles || {}) };
+      const runSize = styleNumber(runStyles, 'font-size', size);
+      selectFontForInline(doc, runStyles, node.tag === 'th' || !!run.bold, !!run.italic, runSize, run.text);
+      lineWidth += doc.widthOfString(run.text || '');
+      for (const token of textTokens(run.text)) minimum = Math.max(minimum, doc.widthOfString(token));
+    }
+    preferred = Math.max(preferred, lineWidth);
+    if (isNowrap(styles)) minimum = preferred;
+  }
+  const padding = styleNumber(styles, 'padding', ['td', 'th'].includes(node.tag) ? 6 : 0);
+  const edges = node.type === 'text' ? 0 : styleNumber(styles, 'padding-left', padding) +
+    styleNumber(styles, 'padding-right', padding) + resolveBorder(styles, {}, {}).borderWidth;
+  return { preferred: preferred + edges, minimum: minimum + edges };
+}
+
 function distributeColumnWidths(preferred, minimum, totalWidth, fixed = []) {
   const cols = preferred.length;
   if (!cols) return [];
@@ -621,12 +673,13 @@ async function renderTable(node, ctx, tableStyles = {}) {
       const padR = styleNumber(cellStyles, 'padding-right', cellPadding);
       const explicitWidth = cellExplicitWidth(cell, contentWidth, fs);
       const explicitMinWidth = cellMinWidth(cell, contentWidth, fs);
-      const availableWidth = Math.max(10, (contentWidth / cols) * colspan - padL - padR);
       selectFontForInline(doc, cellStyles, isHeader, false, fs, text);
+      const intrinsic = hasBlockCellContent(cell) ? intrinsicWidths(cell, doc) : null;
       const measured = hasBlockCellContent(cell)
-        ? availableWidth
+        ? Math.min(intrinsic.preferred - padL - padR, contentWidth)
         : Math.min(doc.widthOfString(text), contentWidth);
-      const tokenWidth = isNowrap(cellStyles) ? measured : measureTokenWidth(doc, text, cellStyles, isHeader, fs);
+      const tokenWidth = intrinsic ? intrinsic.minimum - padL - padR :
+        isNowrap(cellStyles) ? measured : measureTokenWidth(doc, text, cellStyles, isHeader, fs);
       const needed = measured + padL + padR;
       const cssMinNeeded = explicitMinWidth != null ? explicitMinWidth : 0;
       const minNeeded = Math.min(Math.max(tokenWidth + padL + padR, cssMinNeeded), contentWidth);
@@ -751,5 +804,6 @@ module.exports = {
     cellMinWidth,
     cellPlainText,
     distributeColumnWidths,
+    intrinsicWidths,
   },
 };

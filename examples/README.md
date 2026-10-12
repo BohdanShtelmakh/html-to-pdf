@@ -101,8 +101,15 @@ reject shifted/duplicated rows, missing repeated headers and extra blank pages.
 The register's reviewed ranges are pinned to 1-19, 20-40 and 41-50; changes in
 font/browser versions or template geometry require review, not automatic rebaselining.
 
-The new matrix passed content/page checks locally in both engines. Visual review
-still shows spacing, column-width and font-metric differences. Outer text labels
+The new matrix passed content/page checks locally in both engines. The comparison
+also checks nested-table column proportions automatically: it captures
+Lite cell rectangles and Chromium cell widths at a 730px content viewport,
+normalizes each pair to its total width, and fails above a 0.008 difference in
+column share. This is a focused geometry check, not a general pixel-diff baseline.
+Nested cells now derive intrinsic widths from their nested columns rather than
+assuming equal shares of the available parent width.
+
+Visual review still shows spacing, column-width and font-metric differences. Outer text labels
 in nested cells now preserve inherited font size, family and weight; regression
 tests also check explicit descendant overrides. These outputs are not accepted
 as pixel-identical visual baselines. Small fixtures do not establish
