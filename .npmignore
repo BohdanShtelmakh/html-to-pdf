@@ -12,4 +12,5 @@ temp
 cache
 playground/
 bench/
+examples/
 .dockerignore

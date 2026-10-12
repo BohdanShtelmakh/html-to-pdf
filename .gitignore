@@ -11,6 +11,8 @@ node_modules/
 *.pdf
 *.html
 !playground/index.html
+!examples/*.html
+!examples/output/*.pdf
 *.tgz
 debug-inline.svg
 test.js

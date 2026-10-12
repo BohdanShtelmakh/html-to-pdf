@@ -34,6 +34,12 @@ external resources are disabled. These demo restrictions do not apply to the ful
 npm install html-pdf-lite
 ```
 
+## Examples
+
+See [reproducible HTML/PDF examples](https://github.com/BohdanShtelmakh/html-to-pdf/tree/main/examples)
+for an invoice, grid report and multi-page table, including page previews.
+The examples are repository-only and are not included in the npm package.
+
 ## Quick start
 
 ```js

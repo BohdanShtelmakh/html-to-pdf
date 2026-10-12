@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Invoice</title>
+<style>
+@page { size: A4; margin: 32px; }
+body { margin: 0; padding: 12px; font-family: Helvetica, Arial, sans-serif; font-size: 13px; color: #20282c; }
+h1 { font-size: 26px; color: #176b54; margin: 0 0 8px; font-weight: bold; }
+.header { display: flex; justify-content: space-between; margin-bottom: 28px; }
+.brand { width: 62%; } .meta { width: 34%; text-align: right; }
+.addresses { display: flex; gap: 20px; margin-bottom: 24px; }
+.address { width: 46%; padding: 12px; border: 1px solid #cbd9d3; }
+table { width: 100%; border-collapse: collapse; }
+th { background: #176b54; color: white; text-align: left; }
+th, td { padding: 10px; border: 1px solid #cbd9d3; }
+.amount { text-align: right; white-space: nowrap; }
+.totals { margin-top: 20px; text-align: right; }
+.notes { margin-top: 28px; padding-top: 12px; border-top: 1px solid #cbd9d3; color: #52635b; }
+</style></head><body>
+<div class="header"><div class="brand"><h1>Northwind Studio</h1><div>Design and engineering</div></div><div class="meta"><strong>INVOICE INV-0042</strong><br>October 12, 2026<br>Due: October 26, 2026</div></div>
+<div class="addresses"><div class="address"><div><strong>Bill to</strong></div><div>Acme Corporation</div><div>123 Market Street</div><div>New York, NY 10001</div></div><div class="address"><div><strong>Project</strong></div><div>Customer portal</div><div>Purchase order: PO-1082</div><div>Contact: Alex Morgan</div></div></div>
+<table><thead><tr><th width="62%">Description</th><th width="10%">Qty</th><th width="28%" class="amount">Amount</th></tr></thead><tbody>
+<tr><td><strong>Design consultation</strong><br>Discovery, user flows and review.</td><td>2</td><td class="amount">$300.00</td></tr>
+<tr><td><strong>Implementation</strong><br>Responsive customer portal and integration work.</td><td>1</td><td class="amount">$450.00</td></tr>
+<tr><td><strong>Quality assurance</strong><br>Layout, accessibility and release checks.</td><td>1</td><td class="amount">$150.00</td></tr>
+</tbody></table>
+<div class="totals"><div>Subtotal: $900.00</div><div>Tax (10%): $90.00</div><div><strong>Total due: $990.00</strong></div></div>
+<div class="notes"><div><strong>Payment terms</strong></div><div>Payment by bank transfer within 14 days. Include the invoice number as the payment reference.</div></div>
+</body></html>

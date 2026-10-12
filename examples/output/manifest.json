@@ -1,0 +1,31 @@
+{
+  "packageVersion": "1.2.4",
+  "node": "v24.21.0",
+  "fontPolicy": "PDF standard Helvetica; system and emoji resolution disabled",
+  "rasterDpi": 96,
+  "examples": [
+    {
+      "name": "invoice",
+      "bytes": 2711,
+      "pages": [
+        "invoice-page-1.png"
+      ]
+    },
+    {
+      "name": "report",
+      "bytes": 2602,
+      "pages": [
+        "report-page-1.png"
+      ]
+    },
+    {
+      "name": "long-table",
+      "bytes": 6710,
+      "pages": [
+        "long-table-page-1.png",
+        "long-table-page-2.png",
+        "long-table-page-3.png"
+      ]
+    }
+  ]
+}
