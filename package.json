@@ -1,7 +1,7 @@
 {
   "name": "html-pdf-lite",
   "version": "1.2.4",
-  "description": "Fast HTML to PDF for Node.js without Chromium or Puppeteer — 7.6x faster cold start, tiny PDFs, native color emoji. Ideal for invoices, reports, and serverless.",
+  "description": "HTML and CSS to PDF for Node.js without Chromium. Built on PDFKit for invoices, receipts and reports, with tables, partial flex/grid support and color emoji.",
   "main": "src/index.js",
   "exports": {
     ".": {
@@ -63,7 +63,9 @@
   ],
   "scripts": {
     "test": "node test/run-tests.js",
-    "bench": "node bench/run.js"
+    "bench": "node bench/run.js",
+    "playground": "node playground/server.cjs",
+    "test:playground": "node --test playground/server.test.cjs"
   },
   "dependencies": {
     "@resvg/resvg-js": "^2.6.2",

@@ -6,9 +6,9 @@
 [![npm package size](https://img.shields.io/npm/unpacked-size/html-pdf-lite)](https://www.npmjs.com/package/html-pdf-lite)
 [![License](https://img.shields.io/npm/l/html-pdf-lite)](https://github.com/BohdanShtelmakh/html-to-pdf/blob/main/LICENSE)
 
-**HTML → PDF for Node.js — without Chromium.** A lightweight HTML/CSS renderer on top of PDFKit: **7.6× faster cold start** than Puppeteer, PDFs **52–94% smaller**, and **native color emoji** — no headless browser, no Chromium to download.
+**HTML + CSS to PDF for Node.js, without Chromium.** Render document templates directly to a PDF `Buffer` using PDFKit, without rewriting them as PDFMake document definitions.
 
-Built for backends that generate invoices, receipts, and reports — especially serverless (Lambda, Vercel, Cloud Functions) where spinning up Chromium is too slow and too heavy.
+Built for controlled invoice, receipt, and report templates. This is a document renderer with partial CSS support, not a browser replacement. Use Puppeteer when matching arbitrary web pages is the priority.
 
 ![Invoice rendered by html-pdf-lite, with tables and color emoji](https://raw.githubusercontent.com/BohdanShtelmakh/html-to-pdf/main/docs/hero.png)
 
@@ -16,9 +16,9 @@ Built for backends that generate invoices, receipts, and reports — especially 
 
 ## Why html-pdf-lite
 
-- 🪶 **No Chromium** — ~30 MB self-contained, and nothing downloaded at runtime (Puppeteer pulls ~170 MB+ of Chromium on top).
-- ⚡ **Fast cold start** — ~86 ms vs ~654 ms for Puppeteer. Critical on serverless.
-- 📦 **Tiny PDFs** — 52–94% smaller than headless-Chrome output.
+- **No headless browser** — no Chromium process or download. SVG rasterization uses the native `@resvg/resvg-js` dependency.
+- **Direct HTML/CSS input** — inline styles and embedded stylesheets, without a separate PDF document-definition API.
+- **PDF buffers** — return a response, store a file, or attach a document to an email.
 - 😀 **Native color emoji** — embedded as real PDF Type 3 fonts (like Chromium), searchable/selectable, not images.
 - 🧾 **Made for documents** — tables (`colspan`/`rowspan`, repeating headers), flexbox, grid, page breaks, links, SVG, custom fonts.
 - 🟦 **TypeScript types** included · zero config to start.
@@ -39,21 +39,27 @@ const pdf = await renderPdfFromHtml('<h1>Hello 👋</h1><p>Invoice ready ✅</p>
 fs.writeFileSync('out.pdf', pdf); // pdf is a Buffer
 ```
 
-That's it — no browser, no options required. See the [full options](#api) for fonts, margins, emoji, external CSS, and more.
+See the [full options](#api) for fonts, margins, emoji, external CSS, and more.
+Emoji coverage depends on the available font; deployment environments may need
+an explicitly supplied font.
 
 ## html-pdf-lite vs the alternatives
 
 |                             |        html-pdf-lite        | Puppeteer / Playwright |  wkhtmltopdf  | pdfmake / jsPDF |
 | :-------------------------- | :-------------------------: | :--------------------: | :-----------: | :-------------: |
 | Renders HTML + CSS          |             ✅              |           ✅           |      ✅       |  ❌ (own API)   |
-| No Chromium / native binary |             ✅              |           ❌           |      ❌       |       ✅        |
+| No headless browser         |             ✅              |           ❌           |      ❌       |       ✅        |
 | Install footprint           | **~30 MB** (self-contained) | ~170 MB+ (+ Chromium)  | ~50 MB native |      small      |
-| Cold start                  |         **~86 ms**          |        ~650 ms         |    ~200 ms    |      fast       |
-| Serverless-friendly         |             ✅              |        ⚠️ heavy        |   ⚠️ binary   |       ✅        |
+| Deployment considerations   | Native SVG dependency + fonts | Browser binary + fonts | Native binary | Fonts |
 | Color emoji                 |             ✅              |           ✅           |      ⚠️       |       ❌        |
 | Full Chrome CSS fidelity    |             ❌              |           ✅           |      ⚠️       |       n/a       |
 
 Choose html-pdf-lite when you control the HTML (invoices, reports, tickets) and want speed + small footprint. Choose Puppeteer when you need pixel-perfect fidelity for arbitrary web pages.
+
+`html-to-pdfmake` is another option for converting HTML into PDFMake definitions.
+It overlaps with this package, but is not the same layout engine. Compare your
+own templates: stylesheet-driven flex/grid layouts may require adapting them to
+PDFMake columns and styles. Neither library guarantees browser CSS fidelity.
 
 ## What's new in 1.2.0
 
@@ -66,27 +72,50 @@ Choose html-pdf-lite when you control the HTML (invoices, reports, tickets) and 
 
 ## Benchmarks
 
-Measured on Node 22, A4 output, 15 iterations (warm):
+Measured October 12, 2026 on Apple M5 / macOS arm64, Node 24.21.0,
+html-pdf-lite 1.2.4 and Puppeteer 24.43.1. Values below are medians:
 
 | Template               | html-pdf-lite | Puppeteer |  Speedup |        PDF Size |
 | :--------------------- | ------------: | --------: | -------: | --------------: |
-| Simple (h1 + p)        |          61ms |      99ms |     1.6x | 1.4 KB vs 17 KB |
-| Invoice (flex + table) |          89ms |      98ms |     1.1x |  37 KB vs 84 KB |
-| Report (text-heavy)    |          70ms |      95ms |     1.4x |  15 KB vs 32 KB |
-| Receipt (small table)  |          63ms |      92ms |     1.5x | 1.8 KB vs 29 KB |
-| Styled (grid + cards)  |          70ms |     100ms |     1.4x |  16 KB vs 41 KB |
-| Large table (50×6)     |          87ms |     114ms |     1.3x | 18 KB vs 118 KB |
-| **Cold start**         |      **86ms** | **654ms** | **7.6x** |               — |
+| Simple (h1 + p)        |         2.1ms |    82.2ms |    38.7x | 1.4 KiB vs 16.9 KiB |
+| Invoice (flex + table) |        22.3ms |    86.4ms |     3.9x | 37.7 KiB vs 84.6 KiB |
+| Report (text-heavy)    |        14.9ms |    82.0ms |     5.5x | 15.5 KiB vs 32.0 KiB |
+| Receipt (small table)  |         4.3ms |    83.1ms |    19.3x | 1.8 KiB vs 29.2 KiB |
+| Styled (grid + cards)  |        13.4ms |    82.9ms |     6.2x | 15.5 KiB vs 41.2 KiB |
+| Large table (50×6)     |        28.8ms |    89.4ms |     3.1x | 18.2 KiB vs 118.1 KiB |
 
-PDFs are **52–94% smaller**. Cold start is **7.6x faster** — critical for serverless.
+Warm methodology: 2 warmup renders followed by 15 measured renders in a separate
+worker for each template/engine. Puppeteer reuses one browser but creates and
+closes a page for each render; that lifecycle is included in its time. This is
+not a comparison against a reused-page Puppeteer pool. Both engines receive the
+same seeded HTML, A4 pages and 32pt margins; Chromium backgrounds are enabled.
+html-pdf-lite uses its default font resolution.
 
-Run `npm run bench` to reproduce (requires `npm i -D puppeteer`).
+| Invoice cold start (7 fresh Node processes per engine) | html-pdf-lite | Puppeteer |
+| :---------------------------------------------------- | ------------: | --------: |
+| Module load through first PDF buffer                  |       217.5ms |   434.9ms |
+| Node spawn through first result (includes IPC)         |       241.2ms |   459.8ms |
 
-This makes it perfect for:
+Browser launch is included in cold measurements; browser shutdown is excluded.
+Fresh processes reset module/font caches in the application, **not** OS disk
+caches. These are local process-start measurements, not serverless deployment
+measurements. The module-load-to-PDF median was approximately **2.0x faster**
+for this invoice on this machine.
+
+These PDFs are not pixel-identical: layout, font embedding and feature coverage
+affect speed and size. Neither the timing ratios nor smaller files establish
+equivalent rendering quality. Results vary with hardware, fonts and templates.
+
+Run `npm ci` then `npm run bench` to reproduce. The script fails if Chromium
+cannot launch rather than silently skipping it. [Raw samples and methodology](bench/results.json)
+include median, min, max and nearest-rank p95 (with these small samples, p95 is
+the maximum). Run `node --test bench/run.test.js` to check the benchmark harness.
+
+Typical use cases:
 
 - APIs
 - Invoices & reports
-- Serverless (Lambda, Vercel, etc)
+- Server deployments where native dependency and font availability are verified
 - High-volume PDF generation
 
 ## ⚠️ Not a full Chrome renderer
@@ -107,7 +136,7 @@ If you need:
 - stable
 - backend-grade PDFs
 
-Use this.
+Evaluate this package with your document templates and deployment environment.
 
 ## API
 
@@ -201,6 +230,10 @@ On a bare Linux server there is usually **no `fontkit`-readable color-emoji font
 - Not a full Chromium renderer
 - Partial support for complex CSS layouts (flex/grid)
 - SVG rendering is raster-based and slower for large SVGs
+- Font availability affects glyph coverage, weight, metrics and line wrapping
+- Long flex/grid containers and nested framed content can differ from browser pagination
+- Stylesheet support is selective; advanced layout, media rules and effects are not guaranteed
+- Serverless compatibility must be verified for your platform, native SVG binary and fonts
 
 ## Pagination Support
 
