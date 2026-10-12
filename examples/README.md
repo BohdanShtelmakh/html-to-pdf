@@ -58,8 +58,10 @@ unchanged HTML; Chromium respects CSS `@page` and prints backgrounds. PDFs,
 96-DPI previews, extracted text and a version/source-hash manifest are saved
 under ignored `tmp/pdf-comparison/{lite,chromium}/`. No server is contacted.
 The command checks selected content markers (including every account in the
-register) for omissions or duplication; this is not a full visual correctness
-test. It never updates or approves regression baselines. Chromium embeds system
+register) for omissions or duplication, expected page counts, exact row order
+and distribution, repeated headers, and explicit break destinations. A mismatch
+sets a nonzero exit status and is recorded in the manifest. This is not a full
+visual correctness test. It never updates or approves regression baselines. Chromium embeds system
 fonts; Lite uses standard Helvetica, so pixel equality is not expected.
 
 Local review of the current source (package version 1.2.4) with Chrome 148 found:
@@ -83,3 +85,25 @@ font's metrics. This can change page breaks compared with earlier package output
 Matching row ranges in these fixtures is not a browser-parity guarantee: font
 substitution, default cell vertical alignment and unsupported CSS still differ.
 Do not describe the renderer as generally pixel-identical to Chromium.
+
+### Regression Matrix
+
+`comparison-cases.cjs` contains the three document examples plus five small
+cases: sans/serif font variants, a long unbroken word, mixed-style wrapping,
+nested tables and a forced page break with a framed final block. All fixtures
+have fixed data and no external resources. On macOS, the preview-only Fontconfig
+also maps standard Times fonts to Times New Roman to avoid unrelated font fallback.
+
+`npm test` exercises the same eight fixtures without Chromium or Poppler.
+`test/comparison-regressions.test.js` observes actual PDFKit glyph emission and
+page additions to validate content and pagination. Validator tests explicitly
+reject shifted/duplicated rows, missing repeated headers and extra blank pages.
+The register's reviewed ranges are pinned to 1-19, 20-40 and 41-50; changes in
+font/browser versions or template geometry require review, not automatic rebaselining.
+
+The new matrix passed content/page checks locally in both engines. Visual review
+still shows spacing and font-metric differences. In particular, the outer text
+labels in the nested-table fixture are larger in Lite than in Chromium; this is
+not accepted as a correct visual baseline. Small fixtures do not establish
+correctness for oversized rows, nested-table pagination or a framed block that
+crosses a page boundary.

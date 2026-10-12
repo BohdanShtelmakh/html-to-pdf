@@ -5,11 +5,15 @@ const crypto = require('crypto');
 const { execFileSync, spawnSync } = require('child_process');
 const puppeteer = require('puppeteer');
 const { renderPdfFromHtml } = require('../src');
+const { loadComparisonCases } = require('./comparison-cases.cjs');
+const { rowsByPage, validateResult } = require('./comparison-checks.cjs');
 
 async function main() {
   for (const command of ['pdftoppm', 'pdftotext', 'pdfinfo']) execFileSync(command, ['-v'], { stdio: 'ignore' });
   if (process.platform === 'darwin') {
-    for (const font of ['Arial.ttf', 'Arial Bold.ttf']) fs.accessSync(path.join('/System/Library/Fonts/Supplemental', font));
+    for (const font of ['Arial.ttf', 'Arial Bold.ttf', 'Arial Italic.ttf', 'Times New Roman.ttf', 'Times New Roman Bold.ttf']) {
+      fs.accessSync(path.join('/System/Library/Fonts/Supplemental', font));
+    }
   }
   const output = path.join(__dirname, '../tmp/pdf-comparison');
   fs.mkdirSync(output, { recursive: true });
@@ -24,14 +28,14 @@ async function main() {
     puppeteer: require('puppeteer/package.json').version,
     poppler: spawnSync('pdftoppm', ['-v'], { encoding: 'utf8' }).stderr.trim(),
     rasterDpi: 96, approvedBaseline: false,
-    fontPolicy: 'Lite uses standard Helvetica; Chromium uses system CSS fonts. macOS Poppler substitutes Arial for non-embedded Helvetica.',
+    fontPolicy: 'Lite uses standard PDF fonts; Chromium uses system CSS fonts. macOS Poppler substitutes Arial for Helvetica and Times New Roman for Times.',
     examples: [],
   };
   try {
     browser = await puppeteer.launch({ headless: true });
     manifest.chromium = await browser.version();
-    for (const name of ['invoice', 'report', 'long-table']) {
-      const html = fs.readFileSync(path.join(__dirname, `${name}.html`), 'utf8');
+    for (const spec of loadComparisonCases()) {
+      const { name, html, markers } = spec;
       const page = await browser.newPage();
       let chromiumPdf;
       try {
@@ -46,11 +50,8 @@ async function main() {
         autoResolveFonts: false, autoResolveEmojiFont: false, autoDownloadEmojiFont: false,
         allowScripts: false, fetchExternalCss: false,
       });
-      const example = { name, htmlSha256: crypto.createHash('sha256').update(html).digest('hex'), engines: {} };
-      const markers = name === 'invoice'
-        ? ['INVOICE INV-0042', 'Total due: $990.00', 'Payment terms']
-        : name === 'report' ? ['Quarterly Report', 'Renewals remained strong.', 'Next Quarter', 'Review note:']
-          : [...Array.from({ length: 50 }, (_, i) => `Customer ${String(i + 1).padStart(3, '0')}`), 'End of register: all 50 accounts listed.'];
+      const example = { name, htmlSha256: crypto.createHash('sha256').update(html).digest('hex'),
+        expected: { pages: spec.expectedPages, rowsByPage: spec.expectedRowsByPage, pageMarkers: spec.pageMarkers }, engines: {} };
       for (const [engine, pdf] of Object.entries({ lite: litePdf, chromium: chromiumPdf })) {
         const directory = path.join(output, engine);
         fs.mkdirSync(directory, { recursive: true });
@@ -72,12 +73,11 @@ async function main() {
         })).filter(entry => entry.count !== 1);
         const previews = fs.readdirSync(directory).filter(file => new RegExp(`^${name}-page-\\d+\\.png$`).test(file));
         if (previews.length !== pages) throw new Error(`Missing page previews: ${name}/${engine}`);
-        const rowsByPage = name === 'long-table' ? text.split('\f').map(pageText =>
-          [...pageText.matchAll(/Customer\s+(\d{3})/g)].map(match => Number(match[1]))
-        ).filter(rows => rows.length) : undefined;
-        example.engines[engine] = { pages, bytes: pdf.length, missingMarkers, unexpectedMarkerCounts, rowsByPage };
-        if (unexpectedMarkerCounts.length) {
-          console.error(`${name}/${engine}: unexpected content counts`, unexpectedMarkerCounts);
+        const issues = validateResult(spec, { text, pages });
+        example.engines[engine] = { pages, bytes: pdf.length, missingMarkers, unexpectedMarkerCounts,
+          rowsByPage: spec.expectedRowsByPage ? rowsByPage(text, pages) : undefined, issues };
+        if (issues.length) {
+          console.error(`${name}/${engine}:`, issues);
           process.exitCode = 1;
         }
       }
