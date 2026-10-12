@@ -10,8 +10,8 @@ function pageBottomMargin(layout) {
   return Number.isFinite(docBot) ? docBot : layout.marginBottom;
 }
 
-function resetLayoutToNewPage(layout) {
-  const top = pageTopMargin(layout);
+function resetLayoutToNewPage(layout, topOverride = null) {
+  const top = topOverride ?? pageTopMargin(layout);
   const bot = pageBottomMargin(layout);
   layout.marginTop = top;
   layout.marginBottom = bot;
@@ -30,7 +30,7 @@ function applyPageBreakAfter(styles, ctx, node) {
   const parentTag = String(node?._parentTag || '').toLowerCase();
   if (value === 'always' && !(isLast && (parentTag === 'body' || parentTag === 'root'))) {
     ctx.layout.doc.addPage();
-    resetLayoutToNewPage(ctx.layout);
+    resetLayoutToNewPage(ctx.layout, ctx.runtime?.forcedBreakTop);
   }
 }
 
@@ -43,7 +43,7 @@ function applyPageBreakBefore(styles, ctx) {
   if (!shouldBreak) return;
   if (ctx.layout.atStartOfPage) return;
   ctx.layout.doc.addPage();
-  resetLayoutToNewPage(ctx.layout);
+  resetLayoutToNewPage(ctx.layout, ctx.runtime?.forcedBreakTop);
 }
 
 function shouldAvoidBreakInside(styles = {}) {

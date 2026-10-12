@@ -324,7 +324,7 @@ function renderInlineRuns(runs, ctx, { baseStyles, align, lineGap, tag }) {
     const textWidth = emojiInfo
       ? doc._emoji.advanceWidth(emojiInfo, size) + emojiLeadW + emojiTrailW
       : doc.widthOfString(text, { characterSpacing: letterSpacing }) + wordSpacing * spaces.length;
-    const measuredTextHeight = emojiInfo ? size : doc.heightOfString(text, { lineGap: 0 });
+    const measuredTextHeight = emojiInfo ? size : doc.currentLineHeight(true);
     const textHeight = measuredTextHeight;
     const runLineHeight = lineHeightValue(s, size, tag);
     const contentH = runLineHeight;
@@ -428,7 +428,9 @@ function renderInlineRuns(runs, ctx, { baseStyles, align, lineGap, tag }) {
         }
 
         doc.fillColor(styleColor(item.styles, 'color', '#000'));
-        const inlineAdjust = item.inlineBox
+        const explicitLeading = item.styles['line-height'] != null &&
+          String(item.styles['line-height']).trim().toLowerCase() !== 'normal';
+        const inlineAdjust = item.inlineBox || explicitLeading
           ? Math.max(0, (item.boxH - item.padT - item.padB - item.border * 2 - item.textHeight) / 2)
           : 0;
         const textY = y + yOffset + item.border + item.padT + inlineAdjust;
@@ -1022,7 +1024,11 @@ async function renderNodeImpl(node, ctx) {
       doc.x = layout.x + paddingLeft;
     }
     const startY = layout.y;
-    if (!measureOnly) doc.y = startY + paddingTop;
+    const explicitLeading = styles['line-height'] != null &&
+      String(styles['line-height']).trim().toLowerCase() !== 'normal';
+    const textOffset = !renderRunsAsGroup && explicitLeading
+      ? Math.max(0, gap / 2) : 0;
+    if (!measureOnly) doc.y = startY + paddingTop + textOffset;
 
     if (!measureOnly && !useInlineBoxes) {
       if (renderRunsAsGroup) {

@@ -9,7 +9,7 @@ async function capture(html) {
   const originalRect = PDFDocument.prototype.rect;
   PDFDocument.prototype.text = function (value, x, y, options) {
     text.push({ value: String(value), x: typeof x === 'number' ? x : this.x,
-      y: typeof y === 'number' ? y : this.y, font: this._font.name });
+      y: typeof y === 'number' ? y : this.y, font: this._font.name, nativeHeight: this.currentLineHeight(true) });
     return originalText.call(this, value, x, y, options);
   };
   PDFDocument.prototype.rect = function (x, y, width, height) {
@@ -26,6 +26,21 @@ async function capture(html) {
 }
 
 async function run() {
+  for (const marker of ['LeadingMarker', '<strong>LeadingMarker</strong>']) {
+    const offsets = [];
+    for (const lineHeight of [1.5, 2]) {
+      const leading = await capture(`<body style="margin:0;font-family:Helvetica;font-size:10pt">
+        <p style="margin:0;line-height:${lineHeight}">${marker}</p></body>`);
+      offsets.push(leading.text.find(call => call.value === 'LeadingMarker').y);
+    }
+    assert.ok(Math.abs(offsets[1] - offsets[0] - 2.5) < 0.01,
+      'native and mixed-style text must share extra leading above and below the glyphs');
+  }
+  const forced = await capture(`<style>@page{margin:32px}body{margin:0;padding:12px;font-family:Helvetica;font-size:10pt}p{margin:0;line-height:1.5}</style>
+    <p>FirstPage</p><div style="page-break-before:always"><p>ForcedMarker</p></div>`);
+  const forcedText = forced.text.find(call => call.value === 'ForcedMarker');
+  assert.ok(Math.abs(forcedText.y - Math.max(0, (15 - forcedText.nativeHeight) / 2) - 24) < 0.01,
+    'forced page break must not repeat the body top padding');
   for (const content of ['<strong>Wrapped bold words followed by ordinary text</strong>',
     '<strong>Mixed bold</strong> followed by <em>italic words</em><br>FinalLine']) {
     const heights = [];
@@ -67,10 +82,14 @@ async function run() {
   const lines = await capture(`<div style="font-size:10pt;line-height:1.5;font-family:Helvetica">
     <strong>LineOne</strong><br>LineTwo<br><em>LineThree</em></div>
     <div style="width:70px;font-size:10pt;line-height:1.5"><strong>Alpha beta</strong> gamma delta epsilon zeta</div>`);
-  const y = ['LineOne', 'LineTwo', 'LineThree'].map(marker => lines.text.find(call => call.value === marker).y);
+  const y = ['LineOne', 'LineTwo', 'LineThree'].map(marker => {
+    const call = lines.text.find(call => call.value === marker);
+    return call.y - Math.max(0, (15 - call.nativeHeight) / 2);
+  });
   assert.ok(Math.abs(y[1] - y[0] - 15) < 0.01 && Math.abs(y[2] - y[1] - 15) < 0.01,
     'explicit breaks must use CSS line-height once');
-  const wrappedY = [...new Set(lines.text.filter(call => call.y > y[2]).map(call => call.y))];
+  const wrappedY = [...new Set(lines.text.filter(call => !['LineOne', 'LineTwo', 'LineThree', ''].includes(call.value))
+    .map(call => Number((call.y - Math.max(0, (15 - call.nativeHeight) / 2)).toFixed(4))))];
   assert.ok(wrappedY.length >= 3, 'regression must exercise mixed-style automatic wrapping');
   for (let i = 1; i < wrappedY.length; i++) assert.ok(Math.abs(wrappedY[i] - wrappedY[i - 1] - 15) < 0.01,
     'automatic wrapping must use CSS line-height once');

@@ -160,7 +160,8 @@ async function makePdf(json, options = {}) {
   }
 
   const layout = new Layout(doc, { margins: doc.page.margins });
-  const runtime = { namedDestinations: new Set() };
+  const runtime = { namedDestinations: new Set(),
+    forcedBreakTop: !options.margins ? Math.max(minMargins.top, base.top) : null };
   await renderNode(json, { doc, layout, options, runtime });
   if (doc._emoji) doc._emoji.finalize();
   const docDone = new Promise((resolve, reject) => {
