@@ -10,6 +10,11 @@
 
 Built for controlled invoice, receipt, and report templates. This is a document renderer with partial CSS support, not a browser replacement. Use Puppeteer when matching arbitrary web pages is the priority.
 
+**[Try the Playground](https://pdf-api.bohdanlab.dpdns.org)** — edit HTML/CSS,
+preview the generated PDF, and download it. Includes invoice, report, and long-table examples.
+The public demo accepts text and embedded CSS only; images, SVG, scripts, and
+external resources are disabled. These demo restrictions do not apply to the full package.
+
 ![Invoice rendered by html-pdf-lite, with tables and color emoji](https://raw.githubusercontent.com/BohdanShtelmakh/html-to-pdf/main/docs/hero.png)
 
 <sub>An invoice produced from plain HTML — dark header, striped rows, `colspan` totals, and real color emoji as selectable text. No browser involved.</sub>
