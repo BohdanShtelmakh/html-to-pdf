@@ -672,4 +672,4 @@ async function parseHtmlToObject(
   };
 }
 
-module.exports = { parseHtmlToObject };
+module.exports = { parseHtmlToObject, INHERITABLE };

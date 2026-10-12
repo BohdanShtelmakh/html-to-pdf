@@ -88,6 +88,20 @@ function estimateNodeWidth(node, doc, isInlineDisplay) {
   return maxWidth + padL + padR + borderL + borderR + widthEps;
 }
 
+function outerWidth(styles, contentWidth, containerWidth) {
+  if (String(styles['box-sizing'] || '').trim().toLowerCase() === 'border-box') return contentWidth;
+  const padding = styleNumber(styles, 'padding', 0, { percentBase: containerWidth });
+  let extra = 0;
+  for (const side of ['left', 'right']) {
+    extra += styleNumber(styles, `padding-${side}`, padding, { percentBase: containerWidth });
+    const borderStyle = String(styles[`border-${side}-style`] || styles['border-style'] || '').trim().toLowerCase();
+    if (borderStyle !== 'none' && borderStyle !== 'hidden') {
+      extra += styleNumber(styles, `border-${side}-width`, styleNumber(styles, 'border-width', 0));
+    }
+  }
+  return contentWidth + extra;
+}
+
 function estimateNodeMinWidth(node, doc, isInlineDisplay, containerWidth = null) {
   if (!node) return 0;
   if (node.type === 'text') {
@@ -104,7 +118,7 @@ function estimateNodeMinWidth(node, doc, isInlineDisplay, containerWidth = null)
   const borderR = styleNumber(styles, 'border-right-width', borderWidth);
   const explicitWidth = styleNumber(styles, 'width', null, { percentBase: containerWidth });
   const minWidth = styleNumber(styles, 'min-width', null, { percentBase: containerWidth });
-  if (explicitWidth != null) return Math.max(0, explicitWidth);
+  if (explicitWidth != null) return Math.max(0, outerWidth(styles, explicitWidth, containerWidth));
   const lines = collectLineRuns(node, styles, isInlineDisplay, mergeStyles);
   let maxWidth = 0;
   for (const line of lines) {
@@ -171,7 +185,9 @@ async function renderFlexRow(children, ctx, { startX, startY, width, gap, rowGap
     const childStyles = child.styles || {};
     const basis = styleNumber(childStyles, 'flex-basis', null, { percentBase: width });
     const explicitWidth = styleNumber(childStyles, 'width', null, { percentBase: width });
-    const baseWidth = basis ?? explicitWidth ?? estimateNodeWidth(child, doc, isInlineDisplay);
+    const specifiedWidth = basis ?? explicitWidth;
+    const baseWidth = specifiedWidth != null ? outerWidth(childStyles, specifiedWidth, width)
+      : estimateNodeWidth(child, doc, isInlineDisplay);
     const grow = parseFlexGrow(childStyles);
     const minWidth = estimateNodeMinWidth(child, doc, isInlineDisplay, width);
     return {

@@ -7,14 +7,14 @@
   "examples": [
     {
       "name": "invoice",
-      "bytes": 2711,
+      "bytes": 2706,
       "pages": [
         "invoice-page-1.png"
       ]
     },
     {
       "name": "report",
-      "bytes": 2634,
+      "bytes": 2597,
       "pages": [
         "report-page-1.png"
       ]

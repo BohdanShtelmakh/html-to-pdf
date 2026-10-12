@@ -1,4 +1,5 @@
 const { renderImage, renderTable } = require('../components');
+const { INHERITABLE } = require('../read-html');
 const {
   BASE_PT,
   defaultFontSizeFor,
@@ -154,7 +155,7 @@ function groupMixedChildren(children, parentStyles) {
         type: 'element',
         tag: 'div',
         attrs: {},
-        styles: { ...parentStyles },
+        styles: Object.fromEntries(Object.entries(parentStyles).filter(([property]) => INHERITABLE.has(property))),
         children: inlineGroup,
         _anonymous: true,
       });
@@ -449,7 +450,7 @@ function renderInlineRuns(runs, ctx, { baseStyles, align, lineGap, tag }) {
 
       x += item.boxW;
     }
-    y += line.height + (i < lines.length - 1 ? lineGap : 0);
+    y += line.height;
   }
 
   return y - layout.y;

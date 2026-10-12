@@ -62,19 +62,18 @@ register) for omissions or duplication; this is not a full visual correctness
 test. It never updates or approves regression baselines. Chromium embeds system
 fonts; Lite uses standard Helvetica, so pixel equality is not expected.
 
-Local review with package 1.2.4 and Chrome 148 found:
+Local review of the current source (package version 1.2.4) with Chrome 148 found:
 
 | Example | Lite / Chromium pages | Review |
 | --- | --- | --- |
-| Invoice | 1 / 1 | No visible text collisions; Lite's address frames are narrower and spacing differs. |
-| Report | 1 / 1 | Mixed-style text, bold and line breaks render; Lite's KPI blocks have excessive inset/height. |
+| Invoice | 1 / 1 | No visible text collisions; address frame widths now match, while vertical spacing differs. |
+| Report | 1 / 1 | Repeated KPI padding and excess mixed-style leading are fixed; default block spacing still differs. |
 | Register | 3 / 3 | All 50 accounts occur once and headers repeat; Lite page ranges are 1-17, 18-36, 37-50 versus Chromium's 1-19, 20-40, 41-50. |
 
-Do not approve the current invoice/report as layout baselines yet. Code review
-identified two concrete sizing issues: anonymous inline groups copy the parent's
-padding/borders (`groupMixedChildren` in `src/pdf/render-node.js`), and explicit
-flex widths omit content-box padding/borders in the flex basis calculation
-(`src/pdf/render-flex.js`). The manual inline renderer also adds `lineGap` to a
-line height that already includes CSS leading, increasing mixed-style paragraph
-spacing. Table pagination additionally depends on PDFKit font/line-height
+The three diagnosed issues are covered by `test/box-model.test.js`: anonymous
+inline groups inherit typography, not the parent's box styles; explicit flex
+widths include content-box padding/borders but do not expand border-box widths;
+and mixed-style lines apply CSS line-height once. Invoice/report previews were
+regenerated and visually checked, without approving pixel-perfect baselines.
+Default block spacing and table pagination still depend on PDFKit font/line-height
 metrics; a matching total page count alone does not establish browser parity.

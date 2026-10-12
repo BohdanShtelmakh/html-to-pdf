@@ -1,0 +1,66 @@
+const assert = require('assert');
+const PDFDocument = require('pdfkit');
+const { renderPdfFromHtml } = require('../src');
+
+async function capture(html) {
+  const text = [];
+  const rectangles = [];
+  const originalText = PDFDocument.prototype.text;
+  const originalRect = PDFDocument.prototype.rect;
+  PDFDocument.prototype.text = function (value, x, y, options) {
+    text.push({ value: String(value), x: typeof x === 'number' ? x : this.x,
+      y: typeof y === 'number' ? y : this.y, font: this._font.name });
+    return originalText.call(this, value, x, y, options);
+  };
+  PDFDocument.prototype.rect = function (x, y, width, height) {
+    rectangles.push({ x, y, width, height });
+    return originalRect.call(this, x, y, width, height);
+  };
+  try {
+    await renderPdfFromHtml(html, { autoResolveFonts: false, autoResolveEmojiFont: false });
+  } finally {
+    PDFDocument.prototype.text = originalText;
+    PDFDocument.prototype.rect = originalRect;
+  }
+  return { text, rectangles };
+}
+
+async function run() {
+  const mixed = await capture(`<div style="width:200px;padding:16px;border:1px solid black;font-family:Helvetica;font-weight:bold">
+    InlineMarker<div>BlockMarker</div></div>`);
+  const inline = mixed.text.find(call => call.value === 'InlineMarker');
+  const block = mixed.text.find(call => call.value === 'BlockMarker');
+  assert.ok(inline && block && Math.abs(inline.x - block.x) < 0.01, 'anonymous text must not repeat parent padding');
+  assert.ok(inline.font.includes('Bold'), 'anonymous text must retain inherited font styles');
+
+  const flex = await capture(`<div style="display:flex;width:600px;gap:0">
+    <div style="width:100px;padding:10px;border:1px solid black"><div>ContentBox</div></div>
+    <div style="width:100px;padding:10px;border:1px solid black;box-sizing:border-box"><div>BorderBox</div></div>
+    <div style="width:20%;padding:10px;border:1px solid black"><div>PercentBox</div></div>
+    <div style="flex-basis:80px;padding:10px;border:1px solid black"><div>BasisBox</div></div>
+  </div>`);
+  for (const [marker, expectedWidth] of Object.entries({ ContentBox: 91.5, BorderBox: 75, PercentBox: 106.5, BasisBox: 76.5 })) {
+    const call = flex.text.find(item => item.value === marker);
+    assert.ok(call && flex.rectangles.some(rect => Math.abs(rect.x + 8.25 - call.x) < 0.01 &&
+      Math.abs(rect.width - expectedWidth) < 0.01), `${marker} must respect its outer box width`);
+  }
+  const shrink = await capture(`<div style="display:flex;width:400px;gap:20px">
+    <div style="width:46%;padding:10px;border:1px solid black"><div>Left</div></div>
+    <div style="width:46%;padding:10px;border:1px solid black"><div>Right</div></div>
+  </div>`);
+  assert.ok(shrink.rectangles.filter(rect => Math.abs(rect.width - 142.5) < 0.01).length >= 2,
+    'padded percentage items must shrink to the available row width');
+
+  const lines = await capture(`<div style="font-size:10pt;line-height:1.5;font-family:Helvetica">
+    <strong>LineOne</strong><br>LineTwo<br><em>LineThree</em></div>
+    <div style="width:70px;font-size:10pt;line-height:1.5"><strong>Alpha beta</strong> gamma delta epsilon zeta</div>`);
+  const y = ['LineOne', 'LineTwo', 'LineThree'].map(marker => lines.text.find(call => call.value === marker).y);
+  assert.ok(Math.abs(y[1] - y[0] - 15) < 0.01 && Math.abs(y[2] - y[1] - 15) < 0.01,
+    'explicit breaks must use CSS line-height once');
+  const wrappedY = [...new Set(lines.text.filter(call => call.y > y[2]).map(call => call.y))];
+  assert.ok(wrappedY.length >= 3, 'regression must exercise mixed-style automatic wrapping');
+  for (let i = 1; i < wrappedY.length; i++) assert.ok(Math.abs(wrappedY[i] - wrappedY[i - 1] - 15) < 0.01,
+    'automatic wrapping must use CSS line-height once');
+}
+
+module.exports = { name: 'box-model', run };

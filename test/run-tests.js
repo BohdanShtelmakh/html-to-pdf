@@ -8,6 +8,7 @@ const tests = [
   require('./layout.test'),
   require('./layout-edge.test'),
   require('./inline-layout.test'),
+  require('./box-model.test'),
   require('./css.test'),
   require('./blockquote.test'),
   require('./validation.test'),
