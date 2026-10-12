@@ -321,7 +321,7 @@ function distributeFlexibleColumnWidths(preferred, minimum, totalWidth) {
 
   if (prefSum <= totalWidth) {
     const extra = totalWidth - prefSum;
-    return preferred.map((w) => w + extra / cols);
+    return preferred.map((w) => w + extra * (w / prefSum));
   }
 
   if (minSum < totalWidth) {
@@ -465,7 +465,8 @@ async function measureCellHeight(cell, ctx, spanWidth, cellPadding) {
   const lineHeight = cellStyles['line-height'] == null || String(cellStyles['line-height']).trim().toLowerCase() === 'normal'
     ? doc.currentLineHeight(true) : lh;
   const nativeGap = lineHeight - doc.currentLineHeight(true);
-  const innerWidth = Math.max(1, spanWidth - padL - padR);
+  const { borderWidth } = resolveBorder(cellStyles, {}, {});
+  const innerWidth = Math.max(1, spanWidth - padL - padR - borderWidth);
   const align = textAlign(cellStyles || {});
   const rawText = gatherPlainText(cell) || '';
   const normalizedRuns = normalizeCellRuns(inlineRuns(cell, cellStyles), cellStyles);
@@ -485,7 +486,7 @@ async function measureCellHeight(cell, ctx, spanWidth, cellPadding) {
             nowrap: isNowrap(cellStyles),
           })
         : doc.heightOfString(text, { width: innerWidth, lineGap: nativeGap, lineBreak: !isNowrap(cellStyles) });
-  return h + padT + padB;
+  return h + padT + padB + borderWidth;
 }
 
 // Draw a single cell (background, border, content) at the given rectangle.
@@ -537,17 +538,26 @@ async function drawCell(cell, ctx, { x, y, spanWidth, spanHeight, rowStyles, tab
   const padL = styleNumber(cellStyles, 'padding-left', cellPadding);
   const padR = styleNumber(cellStyles, 'padding-right', cellPadding);
 
-  const innerWidth = Math.max(1, spanWidth - padL - padR);
+  const innerWidth = Math.max(1, spanWidth - padL - padR - borderWidth);
   const normalized = normalizeCellRuns(runs, cellStyles);
   const cellHasEmoji = !!doc._emoji && !hasBlockCellContent(cell) && normalized.some((r) => r.isEmoji);
+  const verticalAlign = String(cellStyles['vertical-align'] || 'middle').trim().toLowerCase();
+  let offsetY = 0;
+  if (verticalAlign === 'middle' || verticalAlign === 'bottom') {
+    const naturalHeight = await measureCellHeight(cell, ctx, spanWidth, cellPadding);
+    const extra = Math.max(0, spanHeight - naturalHeight);
+    offsetY = verticalAlign === 'bottom' ? extra : extra / 2;
+  }
+  const contentY = y + borderWidth / 2 + padT + offsetY;
+  const contentX = x + borderWidth / 2 + padL;
   if (hasBlockCellContent(cell)) {
-    await renderBlockCell(cell, ctx, x + padL, y + padT, innerWidth, layout.marginBottom);
+    await renderBlockCell(cell, ctx, contentX, contentY, innerWidth, layout.marginBottom);
   } else if (cellHasEmoji) {
-    drawEmojiCell(ctx, normalized, cellStyles, isHeader, x + padL, y + padT, innerWidth, align, lineGap, cell.tag);
+    drawEmojiCell(ctx, normalized, cellStyles, isHeader, contentX, contentY, innerWidth, align, lineGap, cell.tag);
   } else if (renderPlainText) {
     renderCellRuns(doc, normalized, {
-      x: x + padL,
-      y: y + padT,
+      x: contentX,
+      y: contentY,
       width: innerWidth,
       align,
       lineHeight,
@@ -557,8 +567,8 @@ async function drawCell(cell, ctx, { x, y, spanWidth, spanHeight, rowStyles, tab
       ctx,
     });
   } else {
-    doc.x = x + padL;
-    doc.y = y + padT;
+    doc.x = contentX;
+    doc.y = contentY;
     for (const run of runs) {
       selectFontForInline(doc, run.styles || {}, isHeader || !!run.bold, !!run.italic, null, run.text);
       const linkOpts = getRunLinkTextOptions(run, {

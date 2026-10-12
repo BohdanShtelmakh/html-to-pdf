@@ -1,6 +1,7 @@
 const assert = require('assert');
 const PDFDocument = require('pdfkit');
 const { renderPdfFromHtml } = require('../src');
+const { _tableInternals } = require('../src/components/table');
 
 async function capture(html) {
   const text = [];
@@ -26,6 +27,26 @@ async function capture(html) {
 }
 
 async function run() {
+  assert.deepStrictEqual(_tableInternals.distributeColumnWidths([60, 40], [20, 20], 200), [120, 80],
+    'auto columns distribute excess width in proportion to their preferred widths');
+  const aligned = {};
+  for (const align of ['', 'top', 'middle', 'bottom']) {
+    const table = await capture(`<body style="font-family:Helvetica;font-size:10pt"><table>
+      <tr><td style="padding:0">Tall<br>Second<br>Third</td>
+      <td style="padding:0;${align ? `vertical-align:${align}` : ''}">AmountMarker</td></tr></table></body>`);
+    aligned[align] = table.text.find(call => call.value === 'AmountMarker').y;
+  }
+  assert.ok(Math.abs(aligned[''] - aligned.middle) < 0.01, 'table cells default to middle alignment');
+  assert.ok(aligned.top < aligned.middle && aligned.middle < aligned.bottom, 'top, middle and bottom must produce distinct positions');
+  assert.ok(Math.abs(aligned.middle - (aligned.top + aligned.bottom) / 2) < 0.01, 'middle alignment centers the content');
+  const borderedHeights = [];
+  for (const border of [0, 2]) {
+    const table = await capture(`<body style="font-family:Helvetica;font-size:10pt"><table>
+      <tr><td style="padding:0;border:${border}px solid black">BorderCell</td></tr></table><p style="margin:0">AfterBorder</p></body>`);
+    borderedHeights.push(table.text.find(call => call.value === 'AfterBorder').y);
+  }
+  assert.ok(Math.abs(borderedHeights[1] - borderedHeights[0] - 1.5) < 0.01,
+    'collapsed cell border must contribute once to the row height');
   for (const marker of ['LeadingMarker', '<strong>LeadingMarker</strong>']) {
     const offsets = [];
     for (const lineHeight of [1.5, 2]) {
