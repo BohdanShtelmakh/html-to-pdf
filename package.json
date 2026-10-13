@@ -59,6 +59,7 @@
     "index.d.ts",
     "index.mjs",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE"
   ],
   "scripts": {

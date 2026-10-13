@@ -72,28 +72,46 @@ It overlaps with this package, but is not the same layout engine. Compare your
 own templates: stylesheet-driven flex/grid layouts may require adapting them to
 PDFMake columns and styles. Neither library guarantees browser CSS fidelity.
 
-## What's new in 1.2.0
+## What's new in 1.3.0
 
-- 😀 **Native color emoji** (sbix / COLRv0) via PDF Type 3 fonts — searchable text, optional auto-download
-- 📊 **Table `rowspan`** + `<thead>` that repeats on every page
-- 📐 **Explicit block `width`** + `margin: auto` centering (e.g. `width: 200mm; margin: 0 auto`)
-- ➗ **`<sub>` / `<sup>`**, `<hr>`, and percentage padding/margin
-- 🎨 Correct asymmetric borders with `border-radius`
-- 🚀 **Much faster** — big cut in parse time and memoized layout for deeply nested flex/grid
+- More consistent `<br>`, mixed-style wrapping and explicit CSS `line-height`.
+- Table cells respect `vertical-align: top|middle|bottom`; the default is `middle`.
+- Nested-table column widths use the intrinsic size of their content; cell borders contribute to layout dimensions.
+- Corrected flex item sizing for padding, borders and percentage widths.
+- Improved continuation of oversized table rows and unfilled framed blocks across pages.
+- Regression coverage for 8 document examples and 3 pagination stress fixtures, including selected geometry comparisons with Chromium.
+
+### Updating From 1.2.x
+
+The JavaScript API and TypeScript signatures are unchanged, but **PDF layout can
+change**. Re-render your templates before deploying: wrapping, column widths,
+row heights, spacing and page counts may differ, especially if the HTML contains
+compensations for older renderer bugs.
+
+Tables no longer receive an implicit `1em` top/bottom margin. Set an explicit
+`margin` if your template needs that spacing. Cells that must stay top-aligned
+should declare `vertical-align: top`. Review manual line breaks, fixed heights,
+negative margins and font availability rather than assuming existing PDFs will
+remain byte-identical or visually identical.
+
+See the [1.3.0 release notes](https://github.com/BohdanShtelmakh/html-to-pdf/blob/main/CHANGELOG.md)
+and the [limitations](#limitations). This release does not promise pixel-perfect
+Chromium rendering.
 
 ## Benchmarks
 
-Measured October 12, 2026 on Apple M5 / macOS arm64, Node 24.21.0,
-html-pdf-lite 1.2.4 and Puppeteer 24.43.1. Values below are medians:
+Measured October 13, 2026 on Apple M5 / macOS arm64, Node 24.21.0,
+the code prepared for html-pdf-lite 1.3.0 (`ddc6581`) and Puppeteer 24.43.1.
+Values below are medians:
 
 | Template               | html-pdf-lite | Puppeteer |  Speedup |        PDF Size |
 | :--------------------- | ------------: | --------: | -------: | --------------: |
-| Simple (h1 + p)        |         2.1ms |    82.2ms |    38.7x | 1.4 KiB vs 16.9 KiB |
-| Invoice (flex + table) |        22.3ms |    86.4ms |     3.9x | 37.7 KiB vs 84.6 KiB |
-| Report (text-heavy)    |        14.9ms |    82.0ms |     5.5x | 15.5 KiB vs 32.0 KiB |
-| Receipt (small table)  |         4.3ms |    83.1ms |    19.3x | 1.8 KiB vs 29.2 KiB |
-| Styled (grid + cards)  |        13.4ms |    82.9ms |     6.2x | 15.5 KiB vs 41.2 KiB |
-| Large table (50×6)     |        28.8ms |    89.4ms |     3.1x | 18.2 KiB vs 118.1 KiB |
+| Simple (h1 + p)        |         2.2ms |    83.7ms |    38.2x | 1.4 KiB vs 16.9 KiB |
+| Invoice (flex + table) |        23.3ms |    91.1ms |     3.9x | 37.3 KiB vs 84.6 KiB |
+| Report (text-heavy)    |        14.9ms |    88.8ms |     5.9x | 15.3 KiB vs 32.0 KiB |
+| Receipt (small table)  |         4.7ms |    91.6ms |    19.4x | 1.8 KiB vs 29.2 KiB |
+| Styled (grid + cards)  |        14.4ms |    83.6ms |     5.8x | 15.5 KiB vs 41.2 KiB |
+| Large table (50×6)     |        31.0ms |    90.7ms |     2.9x | 18.2 KiB vs 118.1 KiB |
 
 Warm methodology: 2 warmup renders followed by 15 measured renders in a separate
 worker for each template/engine. Puppeteer reuses one browser but creates and
@@ -104,13 +122,13 @@ html-pdf-lite uses its default font resolution.
 
 | Invoice cold start (7 fresh Node processes per engine) | html-pdf-lite | Puppeteer |
 | :---------------------------------------------------- | ------------: | --------: |
-| Module load through first PDF buffer                  |       217.5ms |   434.9ms |
-| Node spawn through first result (includes IPC)         |       241.2ms |   459.8ms |
+| Module load through first PDF buffer                  |       226.1ms |   465.5ms |
+| Node spawn through first result (includes IPC)         |       250.4ms |   487.0ms |
 
 Browser launch is included in cold measurements; browser shutdown is excluded.
 Fresh processes reset module/font caches in the application, **not** OS disk
 caches. These are local process-start measurements, not serverless deployment
-measurements. The module-load-to-PDF median was approximately **2.0x faster**
+measurements. The module-load-to-PDF median was approximately **2.1x faster**
 for this invoice on this machine.
 
 These PDFs are not pixel-identical: layout, font embedding and feature coverage
@@ -243,6 +261,8 @@ On a bare Linux server there is usually **no `fontkit`-readable color-emoji font
 - SVG rendering is raster-based and slower for large SVGs
 - Font availability affects glyph coverage, weight, metrics and line wrapping
 - Long flex/grid containers and nested framed content can differ from browser pagination
+- Multi-page colored backgrounds, oversized `rowspan` cells and complex mixed-content fragmentation are not covered by the reviewed pagination fixtures
+- Fragmented rows and unfilled frames temporarily buffer PDF pages, increasing memory use for very large documents
 - Stylesheet support is selective; advanced layout, media rules and effects are not guaranteed
 - Serverless compatibility must be verified for your platform, native SVG binary and fonts
 
