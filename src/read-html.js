@@ -462,6 +462,9 @@ function computeStylesForElement(el, rules, parentStyles = {}) {
     if (allowInherit) styles[prop] = parentVal;
   }
 
+  // Heading weight is a UA default, not inherited from the parent.
+  if (isHeadingTag(tagName)) styles['font-weight'] = 'bold';
+
   // Match every rule against this element exactly once, then derive the winning
   // declaration per property. (Previously the rule set was scanned ~20+ times
   // per element — once per inheritable property and again for font-size — which

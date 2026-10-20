@@ -861,12 +861,11 @@ async function renderNodeImpl(node, ctx) {
     const borderBottom =
       borderBottomStyle === 'none' || borderBottomStyle === 'hidden' || !borderBottomPaint ? 0 : borderBottomWidth;
 
-    selectFontForInline(doc, styles, true, false, size, text);
+    selectFontForInline(doc, styles, false, false, size, text);
     gap = nativeLineGap(doc, styles, size, tag);
-    // Emoji in a heading must go through the manual line-breaker; force bold on
-    // the non-emoji runs to preserve the heading's default weight.
+    // Emoji in a heading must go through the manual line-breaker.
     const headingHasEmoji = doc._emoji && runs.some((r) => r.isEmoji);
-    const headingRuns = headingHasEmoji ? runs.map((r) => (r.isEmoji ? r : { ...r, bold: true })) : runs;
+    const headingRuns = runs;
     const h = headingHasEmoji
       ? renderInlineRunsAt(headingRuns, ctx, {
           baseStyles: styles,
@@ -909,7 +908,7 @@ async function renderNodeImpl(node, ctx) {
       } else {
         for (const run of runs) {
           const s = { ...styles, ...(run.styles || {}) };
-          selectFontForInline(doc, s, true, !!run.italic, null, run.text);
+          selectFontForInline(doc, s, !!run.bold, !!run.italic, null, run.text);
           const linkOpts = getRunLinkTextOptions(run, {
             enableInternalAnchors: ctx?.options?.enableInternalAnchors,
           });

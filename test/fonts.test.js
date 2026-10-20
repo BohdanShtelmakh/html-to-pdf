@@ -68,6 +68,32 @@ async function run() {
       </body>
     `, { autoResolveFonts: false, autoResolveEmojiFont: false });
     assertBuffer(standardFonts, 'standard font emission');
+    await renderPdfFromHtml(`<style>h3 { font-weight: lighter !important; }
+      .hh { font-weight: lighter !important; }</style><body style="font-family:Helvetica">
+      <h3 style="font-weight:100!important">HeadingAAA</h3>
+      <div class="hh"><h3 style="font-weight:normal!important">HeadingBBB</h3></div>
+      <h3>HeadingLighter</h3></body>`, { autoResolveFonts: false, autoResolveEmojiFont: false });
+    await renderPdfFromHtml(`<body style="font-family:Helvetica;font-weight:normal">
+      ${[1, 2, 3, 4, 5, 6].map(level => `<h${level}>DefaultHeading${level}</h${level}>
+        <h${level} style="font-weight:normal">NormalHeading${level}</h${level}>`).join('')}
+      <h3 style="font-weight:700">BoldHeading</h3>
+      <h3 style="font-weight:inherit">InheritedHeading</h3>
+      <h3><span style="font-weight:normal">NormalHeadingChild</span></h3>
+      </body>`, { autoResolveFonts: false, autoResolveEmojiFont: false });
+    // Force the emoji layout path without depending on an installed color font.
+    const originalAddPage = PDFDocument.prototype.addPage;
+    PDFDocument.prototype.addPage = function (...args) {
+      const result = originalAddPage.apply(this, args);
+      this._emoji = { lookup: () => null, finalize: () => {} };
+      return result;
+    };
+    try {
+      await renderPdfFromHtml('<body style="font-family:Helvetica"><h3 style="font-weight:normal">EmojiNormalHeading &#x1f601;</h3><h3>EmojiBoldHeading &#x1f601;</h3></body>', {
+        autoResolveFonts: false, autoResolveEmojiFont: false, autoDownloadEmojiFont: false,
+      });
+    } finally {
+      PDFDocument.prototype.addPage = originalAddPage;
+    }
     for (const font of ['Helvetica', 'Helvetica-Bold', 'Helvetica-Oblique', 'Helvetica-BoldOblique']) {
       assert.ok(standardFonts.includes(Buffer.from(`/BaseFont /${font}\n`)), `${font} must be present in PDF resources`);
     }
@@ -75,6 +101,12 @@ async function run() {
     PDFDocument.prototype._fragment = originalFragment;
   }
   for (const [marker, font] of Object.entries({
+    HeadingAAA: 'Helvetica', HeadingBBB: 'Helvetica', HeadingLighter: 'Helvetica',
+    BoldHeading: 'Helvetica-Bold', NormalHeadingChild: 'Helvetica', InheritedHeading: 'Helvetica',
+    EmojiNormalHeading: 'Helvetica', EmojiBoldHeading: 'Helvetica-Bold',
+    ...Object.fromEntries([1, 2, 3, 4, 5, 6].flatMap(level => [
+      [`DefaultHeading${level}`, 'Helvetica-Bold'], [`NormalHeading${level}`, 'Helvetica'],
+    ])),
     RegularMarker: 'Helvetica', StrongMarker: 'Helvetica-Bold', ItalicMarker: 'Helvetica-Oblique',
     CssBoldMarker: 'Helvetica-Bold', NumericBoldMarker: 'Helvetica-Bold', NormalMarker: 'Helvetica',
     AlignedBoldMarker: 'Helvetica-Bold', AlignedNormalMarker: 'Helvetica',
