@@ -22,6 +22,13 @@ export interface RenderOptions {
     bottom?: number;
     left?: number;
   };
+  /**
+   * PDFKit size name ("A4", "LETTER", "LEGAL", ...) or [width, height] in points.
+   * A height of 'auto' shrinks the last page to its content (max 14400pt tall). Default "A4".
+   */
+  pageSize?: string | [number, number | 'auto'];
+  /** Default "portrait". Not allowed with an 'auto' height. */
+  orientation?: 'portrait' | 'landscape';
   svgScale?: number;
   svgDpi?: number;
   /** Path to a color-emoji font (sbix or COLRv0) used to render native color emoji. */

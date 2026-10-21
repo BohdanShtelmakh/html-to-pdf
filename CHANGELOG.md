@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Features
+
+- Add `pageSize` (PDFKit size name or `[width, height]` in points) and `orientation` options. Pages were always A4.
+- Support `pageSize: [width, 'auto']` to shrink the last page to its content.
+
+### Compatibility Notes
+
+The default is still A4 portrait, so existing output is unchanged.
+
 ## 1.3.0
 
 ### Rendering Improvements

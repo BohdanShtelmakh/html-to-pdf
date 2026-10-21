@@ -52,7 +52,56 @@ function normalizeFamilyEntry(value) {
   };
 }
 
+// Largest page side the PDF spec allows (ISO 32000, 200 in), in points.
+const MAX_PAGE_SIDE = 14400;
+
+function invalidPageSize(value) {
+  return new TypeError(
+    'pageSize must be a PDFKit size name (e.g. "A4", "LETTER") or [width, height] in points, got ' +
+      JSON.stringify(value)
+  );
+}
+
+function checkSide(side, value) {
+  if (typeof side !== 'number' || !Number.isFinite(side) || side <= 0 || side > MAX_PAGE_SIDE) {
+    throw invalidPageSize(value);
+  }
+  return side;
+}
+
+// Returns the PDFKit `size`/`layout` options plus whether the final page should
+// shrink to its content (height 'auto').
+function resolvePageSize(options) {
+  const value = options.pageSize == null ? 'A4' : options.pageSize;
+  const orientation = options.orientation == null ? 'portrait' : options.orientation;
+  if (orientation !== 'portrait' && orientation !== 'landscape') {
+    throw new TypeError('orientation must be "portrait" or "landscape", got ' + JSON.stringify(orientation));
+  }
+  if (typeof value === 'string') {
+    if (!value.trim()) throw invalidPageSize(value);
+    return { size: value.toUpperCase(), layout: orientation, autoHeight: false };
+  }
+  if (!Array.isArray(value) || value.length !== 2) throw invalidPageSize(value);
+  const width = checkSide(value[0], value);
+  if (value[1] === 'auto') {
+    if (orientation !== 'portrait') {
+      throw new TypeError('orientation "landscape" cannot be combined with an "auto" page height');
+    }
+    return { size: [width, MAX_PAGE_SIDE], layout: 'portrait', autoHeight: true };
+  }
+  return { size: [width, checkSide(value[1], value)], layout: orientation, autoHeight: false };
+}
+
+// Shrinks the current (last) page to the content drawn on it. PDFKit draws with a
+// top-left origin, so the visible area is kept by moving the MediaBox's lower edge up.
+function fitLastPageToContent(doc, layout) {
+  const page = doc.page;
+  const used = Math.min(page.height, Math.ceil(layout.y + layout.marginBottom));
+  page.dictionary.data.MediaBox = [0, page.height - used, page.width, page.height];
+}
+
 async function makePdf(json, options = {}) {
+  const pageSize = resolvePageSize(options);
   const defaultBodyMargin = parsePxWithOptions('8px', 8);
   const bodyMargins = parseMarginBox(json?.styles, defaultBodyMargin);
   const bodyPadding = {
@@ -85,7 +134,8 @@ async function makePdf(json, options = {}) {
   const buffers = [];
   const doc = new PDFDocument({
     autoFirstPage: true,
-    size: 'A4',
+    size: pageSize.size,
+    layout: pageSize.layout,
     margins: options.margins || {
       top: Math.max(minMargins.top, effectiveMargins.top ?? minMargins.top),
       right: Math.max(minMargins.right, effectiveMargins.right ?? minMargins.right),
@@ -163,6 +213,7 @@ async function makePdf(json, options = {}) {
   const runtime = { namedDestinations: new Set(),
     forcedBreakTop: !options.margins ? Math.max(minMargins.top, base.top) : null };
   await renderNode(json, { doc, layout, options, runtime });
+  if (pageSize.autoHeight) fitLastPageToContent(doc, layout);
   if (doc._emoji) doc._emoji.finalize();
   const docDone = new Promise((resolve, reject) => {
     doc.on('end', resolve);

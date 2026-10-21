@@ -16,6 +16,8 @@ const { makePdf } = require('./obj-pdf');
  * @param {boolean} [options.enableInternalAnchors]
  * @param {boolean} [options.autoResolveFonts]
  * @param {{top?: number, right?: number, bottom?: number, left?: number}} [options.margins]
+ * @param {string|[number, number|'auto']} [options.pageSize] PDFKit size name ("A4", "LETTER", ...) or [width, height] in points; height 'auto' fits the last page to its content. Default "A4".
+ * @param {'portrait'|'landscape'} [options.orientation] Default "portrait".
  * @param {number} [options.svgScale]
  * @param {number} [options.svgDpi]
  * @param {string} [options.emojiFont] Path to a color-emoji font (sbix or COLRv0) for native color emoji.
@@ -51,6 +53,8 @@ async function renderPdfFromHtml(html, options = {}) {
     enableInternalAnchors: options.enableInternalAnchors,
     autoResolveFonts: options.autoResolveFonts,
     margins: options.margins,
+    pageSize: options.pageSize,
+    orientation: options.orientation,
     svgScale: options.svgScale,
     svgDpi: options.svgDpi,
     emojiFont: options.emojiFont,
