@@ -186,6 +186,11 @@ Options:
 - `ignoreInvalidImages`: skip images PDFKit cannot decode (default: `false`)
 - `autoResolveFonts`: search system font directories and match `font-family` names (default: `true`)
 - `margins`: override PDF page margins (points, all optional)
+- `pageSize`: page size (default: `"A4"`)
+  - a PDFKit size name, case-insensitive: `"A4"`, `"LETTER"`, `"LEGAL"`, ...
+  - `[width, height]` in points, each up to `14400`: `[612, 792]`
+  - `[width, "auto"]`: shrink the last page to its content, e.g. a long narrow page to rasterize into one image. Content taller than `14400` points still breaks onto a new page.
+- `orientation`: `"portrait"` or `"landscape"` (default: `"portrait"`; not allowed with an `"auto"` height)
 - `svgScale`: raster scale for inline SVGs (default: `2`)
 - `svgDpi`: raster DPI for inline SVGs (default: `72`)
 - SVG images are rasterized via `@resvg/resvg-js`.

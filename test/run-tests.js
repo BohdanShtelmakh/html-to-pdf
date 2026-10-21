@@ -18,6 +18,7 @@ const tests = [
   require('./elements.test'),
   require('./svg.test'),
   require('./emoji.test'),
+  require('./page-size.test'),
 ];
 
 async function main() {
