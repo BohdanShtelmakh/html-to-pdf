@@ -4,7 +4,7 @@
 <body>
 <header><div><h1>html-pdf-lite <span>Playground</span></h1></div><a href="https://github.com/BohdanShtelmakh/html-to-pdf">GitHub</a></header>
 <main>
-<div class="toolbar"><label>Example <select id="sample"></select></label><button id="render" type="button"><span aria-hidden="true">&#9654;</span> Generate PDF</button><a id="download" download="playground.pdf" hidden>Download PDF</a><span id="status" role="status" aria-live="polite">Ready</span></div>
+<div class="toolbar"><label>Example <select id="sample"></select></label><label>Page size <select id="page-size"><option value="A4">A4</option><option value="LETTER">US Letter</option><option value="auto">Auto height (300 pt wide)</option></select></label><label>Orientation <select id="orientation"><option value="portrait">Portrait</option><option value="landscape">Landscape</option></select></label><button id="render" type="button"><span aria-hidden="true">&#9654;</span> Generate PDF</button><a id="download" download="playground.pdf" hidden>Download PDF</a><span id="status" role="status" aria-live="polite">Ready</span></div>
 <div class="workspace"><section class="editor"><h2><label for="html">HTML / CSS</label></h2><textarea id="html" spellcheck="false" aria-label="HTML source"></textarea></section><section class="preview"><h2>PDF output</h2><div id="empty"><img src="../docs/hero.png" alt="Example invoice rendered by html-pdf-lite"></div><iframe id="pdf" title="Generated PDF" hidden></iframe></section></div>
 </main><footer>Local demo &middot; Text and CSS only &middot; HTML is not stored &middot; <a href="https://github.com/BohdanShtelmakh/html-to-pdf#limitations">Renderer limitations</a></footer>
 <script type="module" src="app.js"></script>

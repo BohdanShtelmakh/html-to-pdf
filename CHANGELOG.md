@@ -1,11 +1,16 @@
 # Changelog
 
-## Unreleased
+## 1.4.0
 
 ### Features
 
 - Add `pageSize` (PDFKit size name or `[width, height]` in points) and `orientation` options. Pages were always A4.
 - Support `pageSize: [width, 'auto']` to shrink the last page to its content.
+- Add A4, US Letter, auto-height and orientation controls to the playground.
+
+### Fixes
+
+- Keep auto-height pages at least 1 pt tall for empty content with zero margins.
 
 ### Compatibility Notes
 

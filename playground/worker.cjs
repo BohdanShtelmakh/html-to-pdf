@@ -1,7 +1,7 @@
 const { JSDOM } = require('jsdom');
 const { renderPdfFromHtml } = require('../src');
 
-process.once('message', async ({ html }) => {
+process.once('message', async ({ html, pageSize, orientation }) => {
   try {
     const dom = new JSDOM(html);
     try {
@@ -27,6 +27,7 @@ process.once('message', async ({ html }) => {
   try {
     const start = performance.now();
     const pdf = await renderPdfFromHtml(html, {
+      pageSize, orientation,
       allowScripts: false, fetchExternalCss: false, autoDownloadEmojiFont: false,
       autoResolveEmojiFont: false, autoResolveFonts: false,
     });

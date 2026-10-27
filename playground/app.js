@@ -5,6 +5,8 @@ const button = document.getElementById('render');
 const status = document.getElementById('status');
 const preview = document.getElementById('pdf');
 const download = document.getElementById('download');
+const pageSize = document.getElementById('page-size');
+const orientation = document.getElementById('orientation');
 let pdfUrl;
 let revision = 0;
 for (const name of Object.keys(samples)) select.add(new Option(name, name));
@@ -22,6 +24,12 @@ function invalidate() {
 }
 select.addEventListener('change', () => { editor.value = samples[select.value]; invalidate(); });
 editor.addEventListener('input', invalidate);
+pageSize.addEventListener('change', () => {
+  orientation.disabled = pageSize.value === 'auto';
+  if (orientation.disabled) orientation.value = 'portrait';
+  invalidate();
+});
+orientation.addEventListener('change', invalidate);
 button.addEventListener('click', async () => {
   const current = revision;
   button.disabled = true;
@@ -30,7 +38,7 @@ button.addEventListener('click', async () => {
   try {
     const response = await fetch('/render', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ html: editor.value }), signal: AbortSignal.timeout(15000),
+      body: JSON.stringify({ html: editor.value, pageSize: pageSize.value, orientation: orientation.value }), signal: AbortSignal.timeout(15000),
     });
     if (!response.ok) throw new Error((await response.json()).error);
     const blob = await response.blob();

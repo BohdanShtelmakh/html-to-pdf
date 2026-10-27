@@ -72,7 +72,24 @@ It overlaps with this package, but is not the same layout engine. Compare your
 own templates: stylesheet-driven flex/grid layouts may require adapting them to
 PDFMake columns and styles. Neither library guarantees browser CSS fidelity.
 
-## What's new in 1.3.0
+## What's new in 1.4.0
+
+- Choose named page sizes such as US Letter, or custom dimensions in points.
+- Set portrait or landscape orientation.
+- Use `[width, 'auto']` to fit the last page to its content. Content exceeding
+  14400 pt still paginates; this is not an unlimited single-page mode.
+- Existing calls keep A4 portrait output by default.
+
+```js
+await renderPdfFromHtml(html, { pageSize: 'LETTER' });
+await renderPdfFromHtml(html, { pageSize: [612, 792], orientation: 'landscape' });
+await renderPdfFromHtml(html, { pageSize: [300, 'auto'] });
+```
+
+Thanks to [@tedens](https://github.com/tedens) for contributing page size and
+orientation support in [PR #6](https://github.com/BohdanShtelmakh/html-to-pdf/pull/6).
+
+### Previous: 1.3.0
 
 - More consistent `<br>`, mixed-style wrapping and explicit CSS `line-height`.
 - Table cells respect `vertical-align: top|middle|bottom`; the default is `middle`.

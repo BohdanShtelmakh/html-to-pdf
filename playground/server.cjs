@@ -47,6 +47,11 @@ function createServer() {
       let input;
       try { input = JSON.parse(Buffer.concat(chunks).toString()); } catch { return fail(400, 'Invalid JSON'); }
       if (!input || typeof input.html !== 'string' || !input.html.trim()) return fail(422, 'Provide non-empty HTML');
+      const pageSize = input.pageSize === undefined ? 'A4' : input.pageSize;
+      const orientation = input.orientation === undefined ? 'portrait' : input.orientation;
+      if (!['A4', 'LETTER', 'auto'].includes(pageSize)) return fail(422, 'Unsupported playground page size');
+      if (!['portrait', 'landscape'].includes(orientation)) return fail(422, 'Invalid orientation');
+      if (pageSize === 'auto' && orientation === 'landscape') return fail(422, 'Auto height requires portrait orientation');
       const result = await new Promise((resolve, reject) => {
         worker = fork(path.join(__dirname, 'worker.cjs'), [], {
           execArgv: ['--max-old-space-size=128'], stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
@@ -56,7 +61,7 @@ function createServer() {
         worker.once('message', message => finish(resolve, message));
         worker.once('error', error => finish(reject, error));
         worker.once('exit', () => finish(reject, new Error('Renderer exited without a result')));
-        worker.send({ html: input.html });
+        worker.send({ html: input.html, pageSize: pageSize === 'auto' ? [300, 'auto'] : pageSize, orientation });
       });
       if (result.error) return fail(result.status || 500, result.error);
       const pdf = Buffer.from(result.pdf, 'base64');
