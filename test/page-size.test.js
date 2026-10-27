@@ -65,6 +65,20 @@ async function run() {
   assert.strictEqual(pageCount(autoTall), 1, 'auto height long content should stay one page');
   assert.ok(ty1 - ty0 > autoHeight * 20, 'auto height should grow with content');
 
+  // Empty content must still produce a usable page when margins are zero.
+  const emptyAuto = await renderPdfFromHtml('<html><body></body></html>', {
+    pageSize: [300, 'auto'],
+    margins: { top: 0, right: 0, bottom: 0, left: 0 },
+  });
+  assert.strictEqual(pageCount(emptyAuto), 1, 'empty auto content should be one page');
+  assertBox(mediaBoxes(emptyAuto)[0], [0, 14399, 300, 14400], 'empty auto minimum height');
+
+  const emptyWithMargins = await renderPdfFromHtml('<html><body></body></html>', {
+    pageSize: [300, 'auto'],
+    margins: { top: 10, right: 0, bottom: 20, left: 0 },
+  });
+  assertBox(mediaBoxes(emptyWithMargins)[0], [0, 14370, 300, 14400], 'empty auto preserves margins');
+
   // Invalid input
   await expectTypeError({ pageSize: [0, 100] }, 'zero width');
   await expectTypeError({ pageSize: [100, -1] }, 'negative height');

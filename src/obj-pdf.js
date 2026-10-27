@@ -96,7 +96,7 @@ function resolvePageSize(options) {
 // top-left origin, so the visible area is kept by moving the MediaBox's lower edge up.
 function fitLastPageToContent(doc, layout) {
   const page = doc.page;
-  const used = Math.min(page.height, Math.ceil(layout.y + layout.marginBottom));
+  const used = Math.min(page.height, Math.max(1, Math.ceil(layout.y + layout.marginBottom)));
   page.dictionary.data.MediaBox = [0, page.height - used, page.width, page.height];
 }
 
