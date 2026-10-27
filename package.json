@@ -1,6 +1,6 @@
 {
   "name": "html-pdf-lite",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "HTML and CSS to PDF for Node.js without Chromium. Built on PDFKit for invoices, receipts and reports, with tables, partial flex/grid support and color emoji.",
   "main": "src/index.js",
   "exports": {
